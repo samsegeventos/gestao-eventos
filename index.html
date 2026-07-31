@@ -1,0 +1,1112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Samseg — Gestão de Eventos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#14161c; --surface:#1c1f28; --surface-2:#23262f; --line:#333744;
+    --amber:#e8a33d; --teal:#4fb3a9; --red:#e2574c; --text:#edeae3; --muted:#8b8f9b;
+    --sidebar-w:230px;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0; background:var(--bg); color:var(--text); font-family:'Inter',sans-serif; min-height:100vh;
+  }
+  h1,h2,h3,.display{font-family:'Space Grotesk',sans-serif;}
+  .mono{font-family:'JetBrains Mono',monospace;}
+  select,input,button,textarea{
+    font-family:'Inter',sans-serif; font-size:14px; color:var(--text);
+    background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:9px 11px; outline:none;
+  }
+  select:focus,input:focus,textarea:focus{border-color:var(--amber);}
+  .btn{cursor:pointer; font-weight:600; border:1px solid var(--line); background:var(--surface-2); color:var(--text); transition:all .15s ease; white-space:nowrap;}
+  .btn:hover{border-color:var(--muted);}
+  .btn-amber{background:var(--amber); color:#14161c; border-color:var(--amber);}
+  .btn-amber:hover{filter:brightness(1.08);}
+  .btn-teal{background:var(--teal); color:#14161c; border-color:var(--teal);}
+  .btn-teal:hover{filter:brightness(1.08);}
+  .btn-ghost{background:transparent;}
+  .btn-danger{color:var(--red); border-color:rgba(226,87,76,0.4); background:transparent;}
+  .btn-danger:hover{background:rgba(226,87,76,0.1);}
+  .btn-sm{padding:6px 10px; font-size:12.5px; border-radius:6px;}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
+  .card-title{font-size:16px; font-weight:600; margin:0 0 2px;}
+  .card-sub{color:var(--muted); font-size:12.5px; margin:0 0 16px;}
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
+  .badge.aberto{color:var(--amber); border-color:var(--amber); background:rgba(232,163,61,0.08);}
+  .badge.finalizado{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
+  .badge.pendente{color:var(--amber); border-color:var(--amber); background:rgba(232,163,61,0.08);}
+  .badge.pago{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
+  .empty{text-align:center; color:var(--muted); padding:40px 20px; font-size:13.5px;}
+  .empty b{color:var(--text); display:block; font-family:'Space Grotesk',sans-serif; font-size:15px; margin-bottom:6px;}
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%) translateY(20px); background:var(--surface-2); border:1px solid var(--line); color:var(--text); padding:10px 18px; border-radius:8px; font-size:13px; opacity:0; transition:all .25s ease; pointer-events:none; z-index:80; max-width:90vw; text-align:center;}
+  .toast.show{opacity:1; transform:translateX(-50%) translateY(0);}
+
+  /* ---------- layout ---------- */
+  .shell{display:flex; min-height:100vh;}
+  .sidebar{
+    width:var(--sidebar-w); flex-shrink:0; background:var(--surface); border-right:1px solid var(--line);
+    padding:20px 14px; position:sticky; top:0; height:100vh; overflow-y:auto;
+  }
+  .brand{display:flex; align-items:center; gap:10px; padding:4px 8px 20px; border-bottom:1px solid var(--line); margin-bottom:14px;}
+  .punch-icon{width:30px;height:30px;border-radius:6px; background:var(--amber); color:#14161c; display:flex;align-items:center;justify-content:center; font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px; flex-shrink:0;}
+  .brand-name{font-size:13.5px; font-weight:700; line-height:1.2;}
+  .brand-sub{font-size:10.5px; color:var(--muted);}
+
+  .nav-group{margin-bottom:6px;}
+  .nav-label{font-size:10px; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); padding:10px 10px 6px;}
+  .nav-item{
+    display:flex; align-items:center; gap:10px; padding:9px 10px; border-radius:7px; cursor:pointer;
+    font-size:13.5px; color:var(--muted); font-weight:500; margin-bottom:2px; transition:all .12s ease;
+  }
+  .nav-item:hover{background:var(--surface-2); color:var(--text);}
+  .nav-item.active{background:rgba(232,163,61,0.1); color:var(--amber); font-weight:600;}
+  .nav-item .ic{width:16px; text-align:center; flex-shrink:0;}
+  .nav-sub{margin-left:8px; padding-left:14px; border-left:1px solid var(--line); margin-bottom:8px; display:none;}
+  .nav-sub.open{display:block;}
+  .nav-sub .nav-item{font-size:12.5px; padding:7px 10px;}
+
+  .main{flex:1; min-width:0; padding:26px 28px 60px;}
+  .page-head{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:20px;}
+  .page-head h2{font-size:20px; margin:0;}
+  .page-head .sub{color:var(--muted); font-size:12.5px; margin-top:3px;}
+
+  .mobile-topbar{display:none; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid var(--line); background:var(--surface); position:sticky; top:0; z-index:40;}
+  .mobile-topbar .btn{padding:7px 10px;}
+
+  @media(max-width:860px){
+    .sidebar{position:fixed; left:0; top:0; z-index:60; transform:translateX(-100%); transition:transform .2s ease; box-shadow:0 0 40px rgba(0,0,0,0.5);}
+    .sidebar.open{transform:translateX(0);}
+    .mobile-topbar{display:flex;}
+    .main{padding:18px 16px 60px;}
+    .overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50;}
+    .overlay.show{display:block;}
+  }
+
+  /* ---------- dashboard ---------- */
+  .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
+  .stat-card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px;}
+  .stat-card .label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;}
+  .stat-card .value{font-family:'JetBrains Mono',monospace; font-size:22px; font-weight:700; margin-top:6px;}
+  .stat-card.amber .value{color:var(--amber);}
+  .stat-card.teal .value{color:var(--teal);}
+  .stat-card.red .value{color:var(--red);}
+  @media(max-width:760px){.stat-grid{grid-template-columns:repeat(2,1fr);}}
+
+  .alert-box{background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--amber); border-radius:8px; padding:12px 14px; font-size:13px; margin-bottom:8px; display:flex; justify-content:space-between; gap:10px; align-items:center; cursor:pointer;}
+  .alert-box:hover{border-color:var(--muted); border-left-color:var(--amber);}
+  .alert-box .n{color:var(--muted); font-size:11px; font-family:'JetBrains Mono',monospace;}
+
+  .event-list{display:flex; flex-direction:column; gap:10px;}
+  .event-card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px; display:flex; align-items:center; gap:16px; flex-wrap:wrap; cursor:pointer; transition:border-color .15s ease;}
+  .event-card:hover{border-color:var(--muted);}
+  .event-card .main{flex:1; min-width:180px;}
+  .event-card .cliente{font-weight:600; font-size:14.5px;}
+  .event-card .meta{color:var(--muted); font-size:12.5px; margin-top:2px;}
+  .event-card .metrics{display:flex; gap:20px; align-items:center;}
+  .event-card .metric{text-align:right;}
+  .event-card .metric .l{font-size:10.5px; color:var(--muted); text-transform:uppercase;}
+  .event-card .metric .v{font-family:'JetBrains Mono',monospace; font-size:14px; font-weight:700;}
+  @media(max-width:760px){.event-card{flex-direction:column; align-items:stretch;} .event-card .metrics{justify-content:space-between;}}
+
+  .toolbar{display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;}
+  .toolbar .spacer{flex:1;}
+
+  /* ---------- evento detail ---------- */
+  .event-bar{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px 18px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:18px;}
+  .event-bar .info{flex:1; min-width:200px;}
+  .event-bar .cliente{font-weight:600; font-size:15px;}
+  .event-bar .meta{color:var(--muted); font-size:12.5px; margin-top:2px;}
+
+  .subtabs{display:flex; gap:4px; margin-bottom:0; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .subtab{padding:10px 14px; font-size:13px; font-weight:600; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; user-select:none;}
+  .subtab.active{color:var(--amber); border-color:var(--amber);}
+  .subtab:hover:not(.active){color:var(--text);}
+  .subtab .count{display:inline-block; margin-left:5px; font-size:10px; font-family:'JetBrains Mono',monospace; background:var(--surface-2); border-radius:10px; padding:1px 6px; color:var(--muted);}
+
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:0 10px 10px 10px; padding:22px; animation:fade .18s ease;}
+  @keyframes fade{from{opacity:0; transform:translateY(3px);} to{opacity:1; transform:none;}}
+
+  .add-row{display:flex; gap:8px; flex-wrap:wrap; align-items:flex-end; padding:14px; background:var(--surface-2); border:1px dashed var(--line); border-radius:8px; margin-bottom:18px;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;}
+  .field input,.field select{min-width:120px;}
+
+  table{width:100%; border-collapse:collapse; font-size:13.5px;}
+  thead th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:0.4px; color:var(--muted); padding:8px 10px; border-bottom:1px solid var(--line); font-weight:600;}
+  tbody td{padding:10px; border-bottom:1px solid var(--line); vertical-align:middle;}
+  tbody tr:hover{background:rgba(255,255,255,0.02);}
+  tbody tr:last-child td{border-bottom:none;}
+  td input[type="time"],td input[type="date"],td input[type="number"],td input[type="text"]{width:100%; min-width:90px;}
+
+  .stamp{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; font-size:11.5px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
+  .stamp.on{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
+  .stamp.off{color:var(--muted); border-color:var(--line); background:transparent;}
+
+  .checkbox-wrap{display:flex; align-items:center; gap:8px; cursor:pointer;}
+  .checkbox-wrap input{width:16px; height:16px; accent-color:var(--amber); cursor:pointer;}
+
+  .section-title{font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--muted); margin:24px 0 10px;}
+  .section-title:first-child{margin-top:0;}
+
+  .interesse-row{display:flex; align-items:center; gap:12px; padding:10px 12px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; margin-bottom:8px;}
+  .interesse-row .who{flex:1;}
+  .interesse-row .who .nome{font-weight:600; font-size:13.5px;}
+  .interesse-row .who .when{color:var(--muted); font-size:11.5px;}
+
+  .totals{margin-top:18px; display:flex; justify-content:flex-end; gap:26px; padding-top:16px; border-top:1px solid var(--line); flex-wrap:wrap;}
+  .totals .item{text-align:right;}
+  .totals .label{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px;}
+  .totals .value{font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--amber);}
+
+  .link-box{display:flex; gap:8px; align-items:center; margin-bottom:20px; flex-wrap:wrap;}
+  .link-box input{flex:1; min-width:200px; font-family:'JetBrains Mono',monospace; font-size:12px;}
+
+  .client-card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:14px 18px; display:flex; align-items:center; gap:14px; margin-bottom:10px; flex-wrap:wrap;}
+  .client-card .main{flex:1; min-width:160px;}
+  .client-card .nome{font-weight:600; font-size:14px;}
+  .client-card .meta{color:var(--muted); font-size:12px; margin-top:2px;}
+
+  /* ---------- public interest form ---------- */
+  .wrap-narrow{max-width:480px; margin:60px auto; padding:0 20px;}
+  .interesse-page{background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:28px;}
+  .interesse-page .ev-name{font-size:20px; font-weight:700; font-family:'Space Grotesk',sans-serif;}
+  .interesse-page .ev-meta{color:var(--muted); font-size:13px; margin-top:4px; margin-bottom:22px;}
+  .interesse-page .field{margin-bottom:14px;}
+  .interesse-page input{width:100%; padding:11px 12px;}
+  .success-box{text-align:center; padding:20px 0;}
+  .success-box .check{width:54px; height:54px; border-radius:50%; background:rgba(79,179,169,0.12); color:var(--teal); border:2px solid var(--teal); display:flex; align-items:center; justify-content:center; font-size:24px; margin:0 auto 16px;}
+  .public-header{display:flex; align-items:center; gap:10px; justify-content:center; padding:24px 0 0;}
+
+  @media print{
+    .sidebar,.mobile-topbar,.event-bar,.subtabs,.add-row,.btn,.toolbar,.link-box{display:none !important;}
+    body{background:#fff; color:#000;}
+    .main{padding:0;}
+    .panel{border:none; background:#fff; padding:0;}
+    table{color:#000;}
+    thead th,tbody td{border-color:#ccc;}
+    .totals .value{color:#000;}
+  }
+</style>
+</head>
+<body>
+
+<div class="mobile-topbar">
+  <button class="btn btn-sm" id="btnMenuToggle">☰ Menu</button>
+  <div style="font-weight:700; font-size:13.5px;" id="mobileTitle">Samseg</div>
+</div>
+<div class="overlay" id="overlay"></div>
+
+<div class="shell" id="shell"></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ================= STORAGE HELPERS ================= */
+async function sGet(key){ try{ const r = await window.storage.get(key,true); return r?JSON.parse(r.value):null; }catch(e){ return null; } }
+async function sSet(key,value){ try{ await window.storage.set(key, JSON.stringify(value), true); return true; }catch(e){ console.error(e); showToast('Falha ao salvar. Tente novamente.'); return false; } }
+function uid(){ return Math.random().toString(36).slice(2,9); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2600); }
+function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
+function formatPeriodo(e){ if(!e) return '—'; if(e.dataFim && e.dataFim!==e.data) return `${formatDate(e.data)} – ${formatDate(e.dataFim)}`; return formatDate(e.data); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function isoToBr(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
+function brToIso(br){
+  if(!br) return null;
+  const parts=br.trim().split(/[\/\-]/);
+  if(parts.length!==3) return null;
+  let [d,m,y]=parts;
+  if(d.length>2 && y.length<=2){ const t=d; d=y; y=t; } // aceita AAAA-MM-DD digitado por engano
+  d=d.padStart(2,'0'); m=m.padStart(2,'0');
+  if(y.length===2) y='20'+y;
+  if(y.length!==4 || d.length!==2 || m.length!==2) return null;
+  const iso=`${y}-${m}-${d}`;
+  const dt=new Date(iso+'T00:00:00');
+  if(isNaN(dt.getTime())) return null;
+  return iso;
+}
+function askDate(mensagem, isoDefault){
+  let br = prompt(mensagem, isoDefault?isoToBr(isoDefault):'');
+  if(br===null) return undefined; // cancelado
+  if(br.trim()===''){
+    if(isoDefault) return isoDefault;
+    return askDate('Data inválida ou vazia. Use o formato DD/MM/AAAA:\n'+mensagem, isoDefault);
+  }
+  const iso=brToIso(br);
+  if(!iso) return askDate('Data inválida. Use o formato DD/MM/AAAA (ex: 05/08/2026):\n'+mensagem, isoDefault);
+  return iso;
+}
+function calcHoras(entrada,saida){ if(!entrada||!saida) return 0; const [eh,em]=entrada.split(':').map(Number); const [sh,sm]=saida.split(':').map(Number); let mins=(sh*60+sm)-(eh*60+em); if(mins<0) mins+=24*60; return mins/60; }
+function getFuncaoRateForEvent(ev, funcao){ if(!ev || !ev.valoresFuncao) return 0; const f=ev.valoresFuncao.find(t=>t.funcao.toLowerCase()===(funcao||'').toLowerCase()); return f ? (parseFloat(f.valorDia)||0) : 0; }
+function calcValor(c, ev){ if(!c.compareceu) return 0; const dias=parseFloat(c.diasTrabalhados)||0; return getFuncaoRateForEvent(ev, c.funcao)*dias; }
+function brl(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function maskValor(n){ return gestorUnlocked ? brl(n) : '•••••'; }
+function eventLink(id){ return `${location.origin}${location.pathname}?evento=${id}&modo=interesse`; }
+function isLocalFile(){ return location.protocol==='file:'; }
+function copyText(text){ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(()=>showToast('Link copiado.')).catch(()=>fallbackCopy(text)); } else fallbackCopy(text); }
+function fallbackCopy(text){ prompt('Copie o link abaixo:', text); }
+
+/* ================= STATE ================= */
+let events = [];
+let clients = [];
+let gestorUnlocked = false;
+let currentEventId = null;
+let staff = [];
+let interessados = [];
+let subTab = 'preescala';
+let section = 'dashboard';    // dashboard | clientes | eventos | evento | pagamentos | relatorios | interesse
+let dashMonth = new Date().toISOString().slice(0,7);
+let eventStatsCache = {};
+let paymentsFilter = {nome:'', eventoId:'', de:'', ate:''};
+
+const params = new URLSearchParams(location.search);
+const paramEvento = params.get('evento');
+const paramModo = params.get('modo');
+
+/* ================= LOAD ================= */
+async function loadAll(){
+  events = (await sGet('events')) || [];
+  events.forEach(e=>{
+    if(!e.status) e.status='aberto';
+    if(!e.dataFim) e.dataFim = e.data;
+    if(!e.linkValidoAte) e.linkValidoAte = e.dataFim;
+    if(!e.valoresFuncao) e.valoresFuncao = [];
+  });
+  clients = (await sGet('clients')) || [];
+
+  if(paramModo==='interesse' && paramEvento){
+    currentEventId = paramEvento;
+    renderPublic();
+    return;
+  }
+
+  renderShell();
+}
+async function loadStaffForCurrent(){ staff = currentEventId ? ((await sGet('staff:'+currentEventId))||[]) : []; }
+async function loadInteressadosForCurrent(){ interessados = currentEventId ? ((await sGet('interessados:'+currentEventId))||[]) : []; }
+async function saveEvents(){ await sSet('events', events); }
+async function saveClients(){ await sSet('clients', clients); }
+async function saveStaff(){ await sSet('staff:'+currentEventId, staff); }
+async function saveInteressados(){ await sSet('interessados:'+currentEventId, interessados); }
+function currentEvent(){ return events.find(e=>e.id===currentEventId); }
+
+async function tryUnlockGestor(){
+  if(gestorUnlocked) return true;
+  let stored = await sGet('gestorPin');
+  if(stored===null){
+    const novo = prompt('Ainda não existe uma senha do gestor. Defina uma senha para proteger os valores e pagamentos:');
+    if(!novo || !novo.trim()) return false;
+    stored = novo.trim();
+    await sSet('gestorPin', stored);
+  }
+  const tentativa = prompt('Digite a senha do gestor para ver os valores:');
+  if(tentativa===null) return false;
+  if(tentativa===stored){ gestorUnlocked=true; showToast('Área do gestor desbloqueada.'); return true; }
+  showToast('Senha incorreta.');
+  return false;
+}
+function lockGestor(){ gestorUnlocked=false; showToast('Área do gestor bloqueada.'); }
+function lockScreenHtml(msg){
+  return `<div class="empty"><b>Área restrita ao gestor</b>${msg||'Esses dados só ficam visíveis para quem tem a senha do gestor.'}<div style="margin-top:14px;"><button class="btn btn-amber btn-sm" id="btnUnlockGestor">Desbloquear com a senha do gestor</button></div></div>`;
+}
+function attachLockHandler(onUnlock){
+  const btn=document.getElementById('btnUnlockGestor');
+  if(btn) btn.onclick=async ()=>{ if(await tryUnlockGestor()) onUnlock(); };
+}
+
+async function getEventStats(id){
+  if(eventStatsCache[id]) return eventStatsCache[id];
+  const ev=events.find(e=>e.id===id);
+  const s=(await sGet('staff:'+id))||[]; const it=(await sGet('interessados:'+id))||[];
+  const escaladosCount=s.filter(c=>c.escalado).length;
+  const valorTotal=s.filter(c=>c.escalado&&c.compareceu).reduce((sum,c)=>sum+calcValor(c,ev),0);
+  const semFechamento = s.filter(c=>c.escalado).length===0;
+  const pendentesPagamento = s.filter(c=>c.escalado&&c.compareceu&&!c.pago).length;
+  const stats={escaladosCount,valorTotal,interessadosCount:it.length,semFechamento,pendentesPagamento};
+  eventStatsCache[id]=stats; return stats;
+}
+
+/* ================= PUBLIC INTEREST FORM (no sidebar) ================= */
+function renderPublic(alreadySent){
+  document.querySelector('.mobile-topbar').style.display='none';
+  const root=document.getElementById('shell');
+  const ev=currentEvent();
+  if(!ev){
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Evento não encontrado</b>O link pode estar incorreto ou o evento foi removido.</div></div></div>`;
+    return;
+  }
+  if(alreadySent){
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Interesse registrado!</div><div class="ev-meta" style="margin-bottom:0;">O supervisor de <b>${escapeHtml(ev.evento)}</b> vai avaliar sua convocação. Você será chamado se for confirmado.</div></div></div></div>`;
+    return;
+  }
+  if(ev.linkValidoAte && todayISO() > ev.linkValidoAte){
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Link expirado</b>O prazo para registrar interesse neste evento (até ${formatDate(ev.linkValidoAte)}) já passou. Fale com o supervisor caso ainda tenha interesse.</div></div></div>`;
+    return;
+  }
+  root.innerHTML=`
+    <div class="wrap-narrow">
+      <div class="interesse-page">
+        <div class="ev-name">${escapeHtml(ev.evento)}</div>
+        <div class="ev-meta">Cliente: ${escapeHtml(ev.cliente)} · Data: ${formatPeriodo(ev)}</div>
+        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Nome completo</label><input type="text" id="intNome" placeholder="Nome completo"></div>
+        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">CPF</label><input type="text" id="intCpf" placeholder="000.000.000-00"></div>
+        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Função</label><input type="text" id="intFuncao" placeholder="Ex: Vigilante, Porteiro, Supervisor"></div>
+        <button class="btn btn-amber" id="btnEnviarInteresse" style="width:100%; padding:12px;">Tenho interesse em participar</button>
+      </div>
+    </div>`;
+  document.getElementById('btnEnviarInteresse').onclick=async ()=>{
+    const nome=document.getElementById('intNome').value.trim();
+    const cpf=document.getElementById('intCpf').value.trim();
+    const funcao=document.getElementById('intFuncao').value.trim();
+    if(!nome){ showToast('Informe seu nome.'); return; }
+    if(!cpf){ showToast('Informe seu CPF.'); return; }
+    if(!funcao){ showToast('Informe sua função.'); return; }
+    const list=(await sGet('interessados:'+currentEventId))||[];
+    list.push({id:uid(),nome,cpf,funcao,criadoEm:new Date().toISOString()});
+    await sSet('interessados:'+currentEventId,list);
+    renderPublic(true);
+  };
+}
+
+/* ================= SHELL (sidebar + main) ================= */
+function navItems(){
+  const ev = section==='evento' ? currentEvent() : null;
+  return `
+    <div class="nav-group">
+      <div class="nav-item ${section==='dashboard'?'active':''}" data-nav="dashboard"><span class="ic">▤</span> Dashboard</div>
+      <div class="nav-item ${section==='clientes'?'active':''}" data-nav="clientes"><span class="ic">🏢</span> Cadastro de Clientes</div>
+      <div class="nav-item ${section==='eventos'?'active':''}" data-nav="eventos"><span class="ic">📅</span> Eventos</div>
+      ${ev ? `
+      <div class="nav-sub open">
+        <div class="nav-item ${section==='evento'&&subTab==='preescala'?'active':''}" data-nav="evento" data-sub="preescala"><span class="ic">•</span> Pré-Escala</div>
+        <div class="nav-item ${section==='evento'&&subTab==='escala'?'active':''}" data-nav="evento" data-sub="escala"><span class="ic">•</span> Escala Oficial</div>
+        <div class="nav-item ${section==='evento'&&subTab==='presenca'?'active':''}" data-nav="evento" data-sub="presenca"><span class="ic">•</span> Controle de Presença</div>
+        <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
+        <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
+      </div>` : ''}
+      <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
+      <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
+    </div>
+    <div class="nav-group" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
+      <div class="nav-item" id="navGestorToggle"><span class="ic">${gestorUnlocked?'🔓':'🔒'}</span> ${gestorUnlocked?'Bloquear valores':'Modo Gestor'}</div>
+    </div>
+  `;
+}
+
+function renderShell(){
+  const root=document.getElementById('shell');
+  root.innerHTML=`
+    <div class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="punch-icon">⏱</div>
+        <div><div class="brand-name">Samseg</div><div class="brand-sub">Gestão de Eventos</div></div>
+      </div>
+      ${navItems()}
+    </div>
+    <div class="main" id="mainArea"></div>
+  `;
+  attachSidebarHandlers();
+  renderMain();
+}
+function attachSidebarHandlers(){
+  document.querySelectorAll('[data-nav]').forEach(el=>{
+    el.onclick=()=>{
+      const nav=el.dataset.nav;
+      if(nav==='evento'){ subTab=el.dataset.sub; section='evento'; }
+      else { section=nav; }
+      closeMobileMenu();
+      renderShell();
+    };
+  });
+  const menuBtn=document.getElementById('btnMenuToggle');
+  if(menuBtn) menuBtn.onclick=()=>{
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('overlay').classList.add('show');
+  };
+  document.getElementById('overlay').onclick=closeMobileMenu;
+  const gestorToggle=document.getElementById('navGestorToggle');
+  if(gestorToggle) gestorToggle.onclick=async ()=>{
+    if(gestorUnlocked){ lockGestor(); renderShell(); }
+    else { if(await tryUnlockGestor()) renderShell(); }
+  };
+}
+function closeMobileMenu(){
+  const sb=document.getElementById('sidebar'); if(sb) sb.classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+
+async function renderMain(){
+  const main=document.getElementById('mainArea');
+  if(section==='dashboard') return renderDashboard(main);
+  if(section==='clientes') return renderClientes(main);
+  if(section==='eventos') return renderEventos(main);
+  if(section==='evento') return renderEventoDetail(main);
+  if(section==='pagamentos') return renderPagamentos(main);
+  if(section==='relatorios') return renderRelatorios(main);
+}
+
+/* ================= DASHBOARD ================= */
+async function renderDashboard(main){
+  main.innerHTML=`<div class="empty">Carregando painel...</div>`;
+  const monthEvents = events.filter(e=>e.data && e.data.slice(0,7)===dashMonth);
+  eventStatsCache={};
+  const stats = await Promise.all(monthEvents.map(e=>getEventStats(e.id)));
+  const abertos = monthEvents.filter(e=>e.status==='aberto');
+  const finalizados = monthEvents.filter(e=>e.status==='finalizado');
+  const totalReceber = 0; // reservado para módulo de contrato/faturamento (não modelado ainda)
+  const totalPagar = stats.reduce((s,st)=>s+st.valorTotal,0);
+
+  const semFechamento = monthEvents.filter((e,i)=>stats[i].semFechamento && e.status==='aberto');
+  const pagamentosPendentes = monthEvents.filter((e,i)=>e.status==='finalizado' && stats[i].pendentesPagamento>0);
+  const proximosEventos = events.filter(e=>e.data >= todayISO()).sort((a,b)=>a.data<b.data?-1:1).slice(0,5);
+
+  main.innerHTML=`
+    <div class="page-head">
+      <div><h2>Dashboard</h2><div class="sub">Resumo operacional e financeiro</div></div>
+      <input type="month" id="monthPicker" value="${dashMonth}">
+    </div>
+
+    <div class="stat-grid">
+      <div class="stat-card amber"><div class="label">Eventos em Aberto</div><div class="value">${abertos.length}</div></div>
+      <div class="stat-card"><div class="label">Valor a Pagar (mês)</div><div class="value">${maskValor(totalPagar)}</div></div>
+      <div class="stat-card teal"><div class="label">Eventos Finalizados</div><div class="value">${finalizados.length}</div></div>
+      <div class="stat-card"><div class="label">Total de Eventos</div><div class="value">${monthEvents.length}</div></div>
+    </div>
+
+    <div class="section-title" style="margin-top:26px;">Alertas</div>
+    <div id="alertBox"></div>
+
+    <div class="section-title">Eventos em aberto neste mês</div>
+    <div class="event-list" id="eventList"></div>
+  `;
+
+  const alertBox=document.getElementById('alertBox');
+  let alertsHtml='';
+  if(semFechamento.length) alertsHtml+=`<div class="alert-box" data-jump="eventos">Eventos sem fechamento da equipe <span class="n">${semFechamento.length}</span></div>`;
+  if(pagamentosPendentes.length) alertsHtml+=`<div class="alert-box" data-jump="pagamentos">Eventos com pagamentos pendentes <span class="n">${pagamentosPendentes.length}</span></div>`;
+  if(proximosEventos.length) alertsHtml+=`<div class="alert-box" data-jump="eventos">Eventos próximos da realização <span class="n">${proximosEventos.length}</span></div>`;
+  alertBox.innerHTML = alertsHtml || `<div class="card-sub" style="margin-bottom:0;">Nenhum alerta no momento.</div>`;
+  alertBox.querySelectorAll('.alert-box').forEach(el=>{
+    el.onclick=()=>{ section=el.dataset.jump; renderShell(); };
+  });
+
+  const list=document.getElementById('eventList');
+  if(abertos.length){
+    list.innerHTML = abertos.map((e,i)=>eventCardHtml(e, eventStatsCache[e.id])).join('');
+    attachEventCardHandlers(list);
+  } else {
+    list.innerHTML = `<div class="empty"><b>Nenhum evento em aberto neste mês</b>Escolha outro mês ou cadastre um novo evento em "Eventos".</div>`;
+  }
+  document.getElementById('monthPicker').onchange=(e)=>{ dashMonth=e.target.value; renderDashboard(main); };
+}
+
+function eventCardHtml(e, st){
+  st = st || {escaladosCount:0, valorTotal:0, interessadosCount:0};
+  return `
+    <div class="event-card" data-id="${e.id}">
+      <div class="main">
+        <div class="cliente">${escapeHtml(e.cliente)} — ${escapeHtml(e.evento)}</div>
+        <div class="meta">${formatPeriodo(e)} · <span class="badge ${e.status}">${e.status==='aberto'?'Em aberto':'Finalizado'}</span></div>
+      </div>
+      <div class="metrics">
+        <div class="metric"><div class="l">Interessados</div><div class="v">${st.interessadosCount}</div></div>
+        <div class="metric"><div class="l">Escalados</div><div class="v">${st.escaladosCount}</div></div>
+        <div class="metric"><div class="l">Total</div><div class="v">${maskValor(st.valorTotal)}</div></div>
+      </div>
+      <div class="actions"><button class="btn btn-ghost btn-sm btn-link-copy" data-id="${e.id}">Link de interesse</button></div>
+    </div>`;
+}
+function attachEventCardHandlers(list){
+  list.querySelectorAll('.event-card').forEach(card=>{
+    card.onclick=(ev)=>{ if(ev.target.closest('.btn-link-copy')) return; openEvent(card.dataset.id); };
+  });
+  list.querySelectorAll('.btn-link-copy').forEach(btn=>{
+    btn.onclick=(ev)=>{ ev.stopPropagation(); copyText(eventLink(btn.dataset.id)); };
+  });
+}
+
+/* ================= CLIENTES ================= */
+function renderClientes(main){
+  main.innerHTML=`
+    <div class="page-head"><div><h2>Cadastro de Clientes</h2><div class="sub">Empresas que contratam eventos com a Samseg</div></div>
+      <div style="display:flex;gap:10px;align-items:center;">
+      <input type="text" id="clientSearch" placeholder="🔍 Buscar por nome ou CNPJ" style="min-width:280px;">
+      <button class="btn btn-amber" id="btnNewClient">+ Novo cliente</button>
+    </div></div>
+    <div id="clientList"></div>
+  `;
+  document.getElementById('btnNewClient').onclick=()=>openClientForm();
+  const list=document.getElementById('clientList');
+  const search=document.getElementById('clientSearch');
+  function renderClientCards(){
+    const filtro=(search.value||'').toLowerCase().trim();
+    const filtrados=clients.filter(c=>{
+      return !filtro || (c.nome||'').toLowerCase().includes(filtro) || (c.cnpj||'').toLowerCase().includes(filtro);
+    });
+
+  if(filtrados.length){
+    list.innerHTML = filtrados.map(c=>`
+      <div class="client-card" data-id="${c.id}">
+        <div class="main">
+          <div class="nome">${escapeHtml(c.nome)}</div>
+          <div class="meta">${escapeHtml(c.cnpj||'sem CNPJ cadastrado')} ${c.contato?'· '+escapeHtml(c.contato):''}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm btn-edit-client">Editar</button>
+        <button class="btn btn-danger btn-sm btn-del-client">Excluir</button>
+      </div>`).join('');
+    list.querySelectorAll('.btn-edit-client').forEach(btn=>{
+      btn.onclick=(e)=>{ const id=e.target.closest('.client-card').dataset.id; openClientForm(clients.find(c=>c.id===id)); };
+    });
+    list.querySelectorAll('.btn-del-client').forEach(btn=>{
+      btn.onclick=async (e)=>{
+        const id=e.target.closest('.client-card').dataset.id;
+        const c=clients.find(x=>x.id===id);
+        if(!confirm(`Excluir o cliente "${c.nome}"? Eventos já cadastrados não são afetados.`)) return;
+        clients=clients.filter(x=>x.id!==id);
+        await saveClients();
+        renderClientes(main);
+      };
+    });
+  } else {
+    list.innerHTML=`<div class="empty"><b>Nenhum cliente cadastrado</b>Cadastre a primeira empresa contratante para agilizar a criação de eventos.</div>`;
+  }
+  }
+  search.oninput=renderClientCards;
+  renderClientCards();
+}
+function openClientForm(existing){
+  const nome=prompt('Razão social / nome fantasia:', existing?existing.nome:'');
+  if(nome===null) return;
+  const cnpj=prompt('CNPJ (opcional):', existing?existing.cnpj:'');
+  if(cnpj===null) return;
+  const contato=prompt('Contato (telefone/e-mail, opcional):', existing?existing.contato:'');
+  if(contato===null) return;
+  if(!nome.trim()){ showToast('Informe o nome do cliente.'); return; }
+  (async ()=>{
+    if(existing){ existing.nome=nome.trim(); existing.cnpj=cnpj.trim(); existing.contato=contato.trim(); }
+    else clients.push({id:uid(), nome:nome.trim(), cnpj:cnpj.trim(), contato:contato.trim()});
+    await saveClients();
+    renderMain();
+    showToast('Cliente salvo.');
+  })();
+}
+
+/* ================= VALORES POR FUNÇÃO (protegido) ================= */
+function renderValoresFuncaoEvento(){
+  if(!gestorUnlocked){
+    return lockScreenHtml('O valor pago por função neste evento só fica visível para o gestor.');
+  }
+  const ev = currentEvent();
+  const lista = ev.valoresFuncao || [];
+  return `
+    <div class="card-title">Valores por função — só neste evento</div>
+    <div class="card-sub">Defina quanto cada função recebe por dia trabalhado neste evento. Esses valores valem só para "${escapeHtml(ev.evento)}" — outros eventos podem ter valores diferentes para a mesma função.</div>
+    <div class="add-row">
+      <button class="btn btn-amber" id="btnNewFuncaoEvento">+ Nova função para este evento</button>
+    </div>
+    ${lista.length ? lista.map(f=>`
+      <div class="client-card" data-funcao="${escapeHtml(f.funcao)}">
+        <div class="main"><div class="nome">${escapeHtml(f.funcao)}</div><div class="meta">${brl(parseFloat(f.valorDia)||0)} por dia trabalhado</div></div>
+        <button class="btn btn-ghost btn-sm btn-edit-funcao-evento">Editar</button>
+        <button class="btn btn-danger btn-sm btn-del-funcao-evento">Excluir</button>
+      </div>`).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função (ex: Vigilante, Porteiro) para o cálculo automático funcionar neste evento.</div>`}
+  `;
+}
+function openFuncaoEventoForm(existing){
+  const ev = currentEvent();
+  const funcao=prompt('Nome da função (ex: Vigilante):', existing?existing.funcao:'');
+  if(funcao===null) return;
+  const valorDia=prompt(`Valor pago por dia trabalhado nessa função, só em "${ev.evento}" (R$):`, existing?existing.valorDia:'');
+  if(valorDia===null) return;
+  if(!funcao.trim() || isNaN(parseFloat(valorDia))){ showToast('Informe a função e um valor numérico.'); return; }
+  (async ()=>{
+    if(!ev.valoresFuncao) ev.valoresFuncao=[];
+    if(existing){ existing.funcao=funcao.trim(); existing.valorDia=parseFloat(valorDia); }
+    else ev.valoresFuncao.push({funcao:funcao.trim(), valorDia:parseFloat(valorDia)});
+    await saveEvents();
+    renderShell();
+    showToast('Valor da função salvo para este evento.');
+  })();
+}
+
+/* ================= EVENTOS (lista completa) ================= */
+function renderEventos(main){
+  main.innerHTML=`
+    <div class="page-head"><div><h2>Eventos</h2><div class="sub">Todos os eventos cadastrados</div></div>
+      <button class="btn btn-amber" id="btnNewEvent">+ Novo evento</button></div>
+    <div class="toolbar">
+      <select id="filterStatus">
+        <option value="">Todos os status</option>
+        <option value="aberto">Em aberto</option>
+        <option value="finalizado">Finalizados</option>
+      </select>
+      <input type="month" id="filterMonth" value="">
+      <div class="spacer"></div>
+    </div>
+    <div class="event-list" id="eventListFull"></div>
+  `;
+  document.getElementById('btnNewEvent').onclick=()=>openEventForm();
+  const statusSel=document.getElementById('filterStatus');
+  const monthSel=document.getElementById('filterMonth');
+  async function refresh(){
+    let list=events.slice().sort((a,b)=>a.data<b.data?1:-1);
+    if(statusSel.value) list=list.filter(e=>e.status===statusSel.value);
+    if(monthSel.value) list=list.filter(e=>e.data && e.data.slice(0,7)===monthSel.value);
+    const container=document.getElementById('eventListFull');
+    if(!list.length){ container.innerHTML=`<div class="empty"><b>Nenhum evento encontrado</b>Ajuste os filtros ou cadastre um novo evento.</div>`; return; }
+    const stats=await Promise.all(list.map(e=>getEventStats(e.id)));
+    container.innerHTML=list.map((e,i)=>eventCardHtml(e,stats[i])).join('');
+    attachEventCardHandlers(container);
+  }
+  statusSel.onchange=refresh; monthSel.onchange=refresh;
+  refresh();
+}
+
+async function openEvent(id){
+  currentEventId=id;
+  await loadStaffForCurrent();
+  await loadInteressadosForCurrent();
+  section='evento'; subTab='preescala';
+  renderShell();
+}
+
+function openEventForm(existing){
+  let clienteNome = existing ? existing.cliente : '';
+  if(clients.length){
+    const listagem = clients.map((c,i)=>`${i+1}. ${c.nome}`).join('\n');
+    const escolha = prompt(`Escolha o cliente pelo número ou digite um nome novo:\n${listagem}`, clienteNome);
+    if(escolha===null) return;
+    const idx = parseInt(escolha,10);
+    if(!isNaN(idx) && clients[idx-1]) clienteNome = clients[idx-1].nome;
+    else clienteNome = escolha.trim();
+  } else {
+    const c = prompt('Nome do cliente:', clienteNome);
+    if(c===null) return;
+    clienteNome = c.trim();
+  }
+  const evento=prompt('Nome do evento:', existing?existing.evento:'');
+  if(evento===null) return;
+  if(!clienteNome || !evento.trim()){ showToast('Preencha cliente e evento.'); return; }
+
+  const dataInicioDefault = existing ? existing.data : null;
+  const dataInicio = askDate('Data de início do evento (DD/MM/AAAA):', dataInicioDefault);
+  if(dataInicio===undefined) return;
+
+  const dataFimDefault = existing ? existing.dataFim : dataInicio;
+  const dataFim = askDate('Data de término do evento (DD/MM/AAAA) — deixe igual à data de início se for um único dia:', dataFimDefault || dataInicio);
+  if(dataFim===undefined) return;
+
+  const linkDefault = existing ? existing.linkValidoAte : dataFim;
+  const linkValidoAte = askDate('Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:', linkDefault || dataFim);
+  if(linkValidoAte===undefined) return;
+
+  (async ()=>{
+    if(existing){
+      existing.cliente=clienteNome; existing.evento=evento.trim();
+      existing.data=dataInicio; existing.dataFim=dataFim; existing.linkValidoAte=linkValidoAte;
+    } else {
+      events.push({id:uid(), cliente:clienteNome, evento:evento.trim(), data:dataInicio, dataFim:dataFim, linkValidoAte:linkValidoAte, status:'aberto'});
+    }
+    await saveEvents();
+    renderMain();
+    showToast('Evento salvo. Use "Pré-Escala" para começar a escalar a equipe.');
+  })();
+}
+
+async function deleteCurrentEvent(){
+  const ev=currentEvent(); if(!ev) return;
+  if(!confirm(`Excluir o evento "${ev.evento}" (${ev.cliente})? Isso também apaga a escala e presença registradas.`)) return;
+  events=events.filter(e=>e.id!==currentEventId);
+  await saveEvents();
+  currentEventId=null; section='eventos';
+  renderShell();
+  showToast('Evento excluído.');
+}
+
+/* ================= EVENTO DETAIL ================= */
+function renderEventoDetail(main){
+  const ev=currentEvent();
+  if(!ev){ section='eventos'; renderMain(); return; }
+  main.innerHTML=`
+    <div class="event-bar">
+      <div class="info">
+        <div class="cliente">${escapeHtml(ev.cliente)} — ${escapeHtml(ev.evento)}</div>
+        <div class="meta">${formatPeriodo(ev)} · <span class="badge ${ev.status}">${ev.status==='aberto'?'Em aberto':'Finalizado'}</span> · <span class="mono" style="font-size:11.5px;">link válido até ${formatDate(ev.linkValidoAte)}</span></div>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="btnEditEvent">Editar</button>
+      <button class="btn btn-danger btn-sm" id="btnDeleteEvent">Excluir</button>
+    </div>
+    <div class="subtabs">
+      <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.length}</span></div>
+      <div class="subtab ${subTab==='escala'?'active':''}" data-sub="escala">Escala Oficial<span class="count">${staff.filter(s=>s.escalado).length}</span></div>
+      <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
+      <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
+      <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
+    </div>
+    <div class="panel" id="panelContent"></div>
+  `;
+  document.getElementById('btnEditEvent').onclick=()=>openEventForm(ev);
+  document.getElementById('btnDeleteEvent').onclick=deleteCurrentEvent;
+  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=()=>{ subTab=t.dataset.sub; renderShell(); }; });
+
+  const panel=document.getElementById('panelContent');
+  if(subTab==='preescala') panel.innerHTML=renderPreEscala();
+  if(subTab==='escala') panel.innerHTML=renderEscalaOficial();
+  if(subTab==='presenca') panel.innerHTML=renderPresencaTab();
+  if(subTab==='valoresFuncao') panel.innerHTML=renderValoresFuncaoEvento();
+  if(subTab==='aprovacao') panel.innerHTML=renderAprovacaoGestor();
+  attachDetailHandlers();
+  if((subTab==='aprovacao'||subTab==='valoresFuncao') && !gestorUnlocked) attachLockHandler(()=>renderShell());
+}
+
+function renderPreEscala(){
+  const ev=currentEvent();
+  const expirado = ev.linkValidoAte && todayISO() > ev.linkValidoAte;
+  const link = eventLink(currentEventId);
+  const avisoArquivoLocal = isLocalFile() ? `
+    <div class="empty" style="text-align:left; border:1px solid var(--red); border-radius:8px; padding:14px 16px; margin-bottom:16px;">
+      <b style="color:var(--red);">O link não vai funcionar enquanto este arquivo estiver aberto localmente</b>
+      Para o link ficar clicável no WhatsApp, este arquivo HTML precisa estar hospedado em um endereço da internet (com https://). Aberto direto do computador (file://), o endereço gerado fica inválido. Hospede o arquivo (ex: GitHub Pages, Netlify) e reabra por esse endereço para os links funcionarem.
+    </div>` : '';
+  return `
+    <div class="card-title">Convocação — quem tem interesse</div>
+    <div class="card-sub">Compartilhe o link abaixo com a equipe. Quem preencher o formulário (nome, CPF e função) registra o interesse; a confirmação final é feita na Escala Oficial.</div>
+    ${avisoArquivoLocal}
+    <div class="link-box">
+      <div class="field" style="flex:1;"><label>Link de interesse deste evento — válido até ${formatDate(ev.linkValidoAte)}${expirado?' (expirado)':''}</label><input type="text" readonly value="${link}" id="linkField"></div>
+      <button class="btn btn-amber btn-sm" id="btnCopyLink" style="align-self:flex-end;">Copiar link</button>
+      <a class="btn btn-teal btn-sm" style="align-self:flex-end; text-decoration:none;" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Você foi convidado para o evento "'+ev.evento+'". Preencha o formulário para registrar interesse: '+link)}">Enviar no WhatsApp</a>
+    </div>
+    ${interessados.length ? interessados.map(p=>`
+      <div class="interesse-row" data-id="${p.id}">
+        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+        <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
+        <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
+      </div>`).join('') : `<div class="empty"><b>Ninguém manifestou interesse ainda</b>Compartilhe o link acima com a equipe.</div>`}
+  `;
+}
+
+function renderEscalaOficial(){
+  return `
+    <div class="card-title">Equipe confirmada</div>
+    <div class="card-sub">Colaboradores aprovados para este evento. O valor de cada um é calculado automaticamente pela função (ver "Valores por Função") e pelos dias trabalhados, registrados em Controle de Presença.</div>
+    <div class="add-row">
+      <div class="field"><label>Nome</label><input type="text" id="newNome" placeholder="Nome do colaborador"></div>
+      <div class="field"><label>CPF</label><input type="text" id="newCpf" placeholder="000.000.000-00"></div>
+      <div class="field"><label>Função</label><input type="text" id="newFuncao" placeholder="Ex: Vigilante"></div>
+      <button class="btn btn-amber" id="btnAddStaff">+ Adicionar manualmente</button>
+    </div>
+    ${staff.length ? `
+    <table>
+      <thead><tr><th>Nome</th><th>Função</th><th>CPF</th><th>Escalado</th><th></th></tr></thead>
+      <tbody>
+        ${staff.map(c=>`
+          <tr data-id="${c.id}">
+            <td>${escapeHtml(c.nome)}</td>
+            <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
+            <td class="mono">${escapeHtml(c.cpf||'—')}</td>
+            <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
+            <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty"><b>Ninguém confirmado ainda</b>Aprove um interessado na Pré-Escala ou adicione manualmente.</div>`}
+  `;
+}
+
+function renderPresencaTab(){
+  const escalados=staff.filter(c=>c.escalado);
+  if(!escalados.length) return `<div class="empty"><b>Nenhum colaborador escalado</b>Confirme a equipe na Escala Oficial primeiro.</div>`;
+  return `
+    <div class="card-title">Validação de entrada e saída</div>
+    <div class="card-sub">Marque quem compareceu, registre o horário validado na entrada/saída e o total de dias trabalhados neste evento (usado para calcular o valor a pagar).</div>
+    <table>
+      <thead><tr><th>Nome</th><th>Compareceu</th><th>Data</th><th>Entrada</th><th>Saída</th><th>Dias trabalhados</th></tr></thead>
+      <tbody>
+        ${escalados.map(c=>{ return `
+          <tr data-id="${c.id}">
+            <td>${escapeHtml(c.nome)}</td>
+            <td><span class="stamp ${c.compareceu?'on':'off'} stamp-toggle" style="cursor:pointer;">${c.compareceu?'✓ Presente':'Ausente'}</span></td>
+            <td><input type="date" class="f-data" value="${c.data||''}" ${c.compareceu?'':'disabled'}></td>
+            <td><input type="time" class="f-entrada" value="${c.entrada||''}" ${c.compareceu?'':'disabled'}></td>
+            <td><input type="time" class="f-saida" value="${c.saida||''}" ${c.compareceu?'':'disabled'}></td>
+            <td><input type="number" class="f-dias" min="0" step="1" value="${c.diasTrabalhados!=null?c.diasTrabalhados:1}" ${c.compareceu?'':'disabled'} style="width:70px;"></td>
+          </tr>`; }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function renderAprovacaoGestor(){
+  if(!gestorUnlocked){
+    return lockScreenHtml('Os valores a pagar e a aprovação do fechamento só ficam visíveis para o gestor.');
+  }
+  const presentes=staff.filter(c=>c.escalado&&c.compareceu);
+  const ev=currentEvent();
+  const total=presentes.reduce((s,c)=>s+calcValor(c,ev),0);
+  return `
+    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+      <div><div class="card-title">Fechamento da equipe — conferência do gestor</div>
+      <div class="card-sub">Confira os valores antes de aprovar. Após aprovado, o evento fica disponível em Pagamentos.</div></div>
+      <button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button>
+    </div>
+    ${presentes.length ? `
+    <table>
+      <thead><tr><th>Colaborador</th><th>Função</th><th>Data</th><th>Entrada</th><th>Saída</th><th>Dias trabalhados</th><th>Valor a receber</th></tr></thead>
+      <tbody>
+        ${presentes.map(c=>{ return `<tr>
+          <td>${escapeHtml(c.nome)}</td><td>${escapeHtml(c.funcao||'—')}</td><td class="mono">${c.data?formatDate(c.data):'—'}</td>
+          <td class="mono">${c.entrada||'—'}</td><td class="mono">${c.saida||'—'}</td>
+          <td class="mono">${c.diasTrabalhados||0}</td><td class="mono">${brl(calcValor(c,ev))}</td></tr>`; }).join('')}
+      </tbody>
+    </table>
+    <div class="totals">
+      <div class="item"><div class="label">Colaboradores pagos</div><div class="value" style="font-size:16px;">${presentes.length}</div></div>
+      <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(total)}</div></div>
+    </div>
+    <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
+      ${ev.status==='aberto'
+        ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
+        : `<button class="btn btn-ghost" id="btnReabrir">Reabrir para ajustes</button>`}
+    </div>
+    ` : `<div class="empty"><b>Ainda sem presenças registradas</b>Marque quem compareceu em Controle de Presença para liberar a aprovação.</div>`}
+  `;
+}
+
+/* ================= PAGAMENTOS ================= */
+async function collectPayments(){
+  const finalizedEvents = events.filter(e=>e.status==='finalizado');
+  const rows=[];
+  for(const ev of finalizedEvents){
+    const s=(await sGet('staff:'+ev.id))||[];
+    s.filter(c=>c.escalado&&c.compareceu).forEach(c=>{
+      rows.push({eventoId:ev.id, evento:ev.evento, cliente:ev.cliente, data:c.data, staffId:c.id, nome:c.nome, entrada:c.entrada, saida:c.saida, valor:calcValor(c,ev), pago:!!c.pago, dataPagamento:c.dataPagamento||''});
+    });
+  }
+  return rows;
+}
+async function renderPagamentos(main){
+  if(!gestorUnlocked){
+    main.innerHTML=`<div class="page-head"><div><h2>Pagamentos</h2><div class="sub">Colaboradores com fechamento aprovado pelo gestor</div></div></div>${lockScreenHtml()}`;
+    attachLockHandler(()=>renderPagamentos(main));
+    return;
+  }
+  main.innerHTML=`<div class="empty">Carregando pagamentos...</div>`;
+  const rows=await collectPayments();
+  const eventosFinalizados=events.filter(e=>e.status==='finalizado');
+  main.innerHTML=`
+    <div class="page-head"><div><h2>Pagamentos</h2><div class="sub">Colaboradores com fechamento aprovado pelo gestor</div></div></div>
+    <div class="toolbar">
+      <input type="text" id="fNome" placeholder="Buscar por nome">
+      <select id="fEvento"><option value="">Todos os eventos</option>${eventosFinalizados.map(e=>`<option value="${e.id}">${escapeHtml(e.evento)}</option>`).join('')}</select>
+      <input type="date" id="fDe" title="De">
+      <input type="date" id="fAte" title="Até">
+      <div class="spacer"></div>
+    </div>
+    <div class="section-title">Pendentes</div>
+    <div id="pendTable"></div>
+    <div class="section-title">Histórico de pagamentos</div>
+    <div id="pagoTable"></div>
+  `;
+
+  function applyFilters(list){
+    const nome=document.getElementById('fNome').value.trim().toLowerCase();
+    const eventoId=document.getElementById('fEvento').value;
+    const de=document.getElementById('fDe').value;
+    const ate=document.getElementById('fAte').value;
+    return list.filter(r=>{
+      if(nome && !r.nome.toLowerCase().includes(nome)) return false;
+      if(eventoId && r.eventoId!==eventoId) return false;
+      if(de && r.data && r.data<de) return false;
+      if(ate && r.data && r.data>ate) return false;
+      return true;
+    });
+  }
+
+  function drawTables(){
+    const filtered=applyFilters(rows);
+    const pendentes=filtered.filter(r=>!r.pago);
+    const pagos=filtered.filter(r=>r.pago);
+
+    document.getElementById('pendTable').innerHTML = pendentes.length ? `
+      <div class="add-row" style="justify-content:flex-end;">
+        <button class="btn btn-teal btn-sm" id="btnPagarSelecionados">Registrar pagamento dos selecionados</button>
+      </div>
+      <table>
+        <thead><tr><th><input type="checkbox" id="chkAll"></th><th>Nome</th><th>Evento</th><th>Cliente</th><th>Data</th><th>Valor</th><th>Status</th></tr></thead>
+        <tbody>
+          ${pendentes.map(r=>`
+            <tr data-eventoid="${r.eventoId}" data-staffid="${r.staffId}">
+              <td><input type="checkbox" class="chk-pay"></td>
+              <td>${escapeHtml(r.nome)}</td>
+              <td>${escapeHtml(r.evento)}</td>
+              <td>${escapeHtml(r.cliente)}</td>
+              <td class="mono">${r.data?formatDate(r.data):'—'}</td>
+              <td class="mono">${brl(r.valor)}</td>
+              <td><span class="badge pendente">Pendente</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>` : `<div class="empty" style="padding:20px;"><b>Nenhum pagamento pendente</b>Tudo certo com os filtros atuais.</div>`;
+
+    document.getElementById('pagoTable').innerHTML = pagos.length ? `
+      <table>
+        <thead><tr><th>Nome</th><th>Evento</th><th>Data do evento</th><th>Valor</th><th>Pago em</th></tr></thead>
+        <tbody>
+          ${pagos.map(r=>`<tr>
+            <td>${escapeHtml(r.nome)}</td><td>${escapeHtml(r.evento)}</td>
+            <td class="mono">${r.data?formatDate(r.data):'—'}</td><td class="mono">${brl(r.valor)}</td>
+            <td class="mono">${r.dataPagamento?formatDate(r.dataPagamento):'—'}</td></tr>`).join('')}
+        </tbody>
+      </table>` : `<div class="empty" style="padding:20px;"><b>Nenhum pagamento registrado ainda</b></div>`;
+
+    const chkAll=document.getElementById('chkAll');
+    if(chkAll) chkAll.onchange=(e)=>{ document.querySelectorAll('.chk-pay').forEach(c=>c.checked=e.target.checked); };
+
+    const btnPagar=document.getElementById('btnPagarSelecionados');
+    if(btnPagar) btnPagar.onclick=async ()=>{
+      const selected=[...document.querySelectorAll('.chk-pay:checked')].map(c=>c.closest('tr'));
+      if(!selected.length){ showToast('Selecione ao menos um colaborador.'); return; }
+      const byEvent={};
+      selected.forEach(tr=>{
+        const eid=tr.dataset.eventoid, sid=tr.dataset.staffid;
+        (byEvent[eid]=byEvent[eid]||[]).push(sid);
+      });
+      for(const eid in byEvent){
+        const s=(await sGet('staff:'+eid))||[];
+        s.forEach(c=>{ if(byEvent[eid].includes(c.id)){ c.pago=true; c.dataPagamento=todayISO(); } });
+        await sSet('staff:'+eid, s);
+      }
+      showToast('Pagamento registrado.');
+      renderPagamentos(main);
+    };
+  }
+
+  document.getElementById('fNome').oninput=drawTables;
+  document.getElementById('fEvento').onchange=drawTables;
+  document.getElementById('fDe').onchange=drawTables;
+  document.getElementById('fAte').onchange=drawTables;
+  drawTables();
+}
+
+/* ================= RELATÓRIOS ================= */
+async function renderRelatorios(main){
+  main.innerHTML=`<div class="empty">Carregando relatórios...</div>`;
+  const monthEvents=events.filter(e=>e.data && e.data.slice(0,7)===dashMonth);
+  eventStatsCache={};
+  const stats=await Promise.all(monthEvents.map(e=>getEventStats(e.id)));
+  const total=stats.reduce((s,st)=>s+st.valorTotal,0);
+  main.innerHTML=`
+    <div class="page-head"><div><h2>Relatórios</h2><div class="sub">Eventos do mês — operacional e financeiro</div></div>
+      <input type="month" id="relMonth" value="${dashMonth}"></div>
+    <div class="stat-grid" style="margin-bottom:20px;">
+      <div class="stat-card"><div class="label">Eventos no mês</div><div class="value">${monthEvents.length}</div></div>
+      <div class="stat-card"><div class="label">Total a pagar</div><div class="value">${maskValor(total)}</div></div>
+    </div>
+    ${monthEvents.length ? `
+    <table>
+      <thead><tr><th>Cliente</th><th>Evento</th><th>Data</th><th>Status</th><th>Escalados</th><th>Total</th><th></th></tr></thead>
+      <tbody>
+        ${monthEvents.map((e,i)=>`<tr>
+          <td>${escapeHtml(e.cliente)}</td><td>${escapeHtml(e.evento)}</td><td class="mono">${formatPeriodo(e)}</td>
+          <td><span class="badge ${e.status}">${e.status==='aberto'?'Em aberto':'Finalizado'}</span></td>
+          <td class="mono">${stats[i].escaladosCount}</td><td class="mono">${maskValor(stats[i].valorTotal)}</td>
+          <td><button class="btn btn-ghost btn-sm btn-abrir-rel" data-id="${e.id}">Abrir</button></td>
+        </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty"><b>Nenhum evento neste mês</b></div>`}
+  `;
+  document.getElementById('relMonth').onchange=(e)=>{ dashMonth=e.target.value; renderRelatorios(main); };
+  main.querySelectorAll('.btn-abrir-rel').forEach(btn=>{
+    btn.onclick=async ()=>{ currentEventId=btn.dataset.id; await loadStaffForCurrent(); await loadInteressadosForCurrent(); section='evento'; subTab='aprovacao'; renderShell(); };
+  });
+}
+
+/* ================= DETAIL HANDLERS ================= */
+function attachDetailHandlers(){
+  const linkBtn=document.getElementById('btnCopyLink');
+  if(linkBtn) linkBtn.onclick=()=>copyText(eventLink(currentEventId));
+
+  const btnNewFuncaoEvento=document.getElementById('btnNewFuncaoEvento');
+  if(btnNewFuncaoEvento) btnNewFuncaoEvento.onclick=()=>openFuncaoEventoForm();
+  document.querySelectorAll('.btn-edit-funcao-evento').forEach(btn=>{
+    btn.onclick=(e)=>{ const nome=e.target.closest('.client-card').dataset.funcao; openFuncaoEventoForm((currentEvent().valoresFuncao||[]).find(f=>f.funcao===nome)); };
+  });
+  document.querySelectorAll('.btn-del-funcao-evento').forEach(btn=>{
+    btn.onclick=async (e)=>{
+      const nome=e.target.closest('.client-card').dataset.funcao;
+      if(!confirm(`Excluir o valor de "${nome}" neste evento? Colaboradores com essa função ficarão sem valor cadastrado aqui.`)) return;
+      const ev=currentEvent();
+      ev.valoresFuncao=(ev.valoresFuncao||[]).filter(f=>f.funcao!==nome);
+      await saveEvents();
+      renderShell();
+    };
+  });
+
+  document.querySelectorAll('.btn-approve').forEach(btn=>{
+    btn.onclick=async (e)=>{
+      const id=e.target.closest('.interesse-row').dataset.id;
+      const p=interessados.find(i=>i.id===id);
+      staff.push({id:uid(), eventId:currentEventId, nome:p.nome, cpf:p.cpf||'', funcao:p.funcao||'', escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
+      interessados=interessados.filter(i=>i.id!==id);
+      await saveStaff(); await saveInteressados();
+      subTab='escala';
+      renderShell();
+      showToast('Convocação aprovada.');
+    };
+  });
+  document.querySelectorAll('.btn-reject').forEach(btn=>{
+    btn.onclick=async (e)=>{ const id=e.target.closest('.interesse-row').dataset.id; interessados=interessados.filter(i=>i.id!==id); await saveInteressados(); renderShell(); };
+  });
+
+  const btnAdd=document.getElementById('btnAddStaff');
+  if(btnAdd) btnAdd.onclick=async ()=>{
+    const nome=document.getElementById('newNome').value.trim();
+    const cpf=document.getElementById('newCpf').value.trim();
+    const funcao=document.getElementById('newFuncao').value.trim();
+    if(!nome){ showToast('Informe o nome do colaborador.'); return; }
+    staff.push({id:uid(), eventId:currentEventId, nome, cpf, funcao, escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
+    await saveStaff(); renderShell(); showToast('Colaborador adicionado.');
+  };
+  document.querySelectorAll('.chk-escalado').forEach(chk=>{
+    chk.onchange=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); c.escalado=e.target.checked; await saveStaff(); renderShell(); };
+  });
+  document.querySelectorAll('.btn-remove-staff').forEach(btn=>{
+    btn.onclick=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); if(!confirm(`Remover ${c.nome} deste evento?`)) return; staff=staff.filter(s=>s.id!==id); await saveStaff(); renderShell(); };
+  });
+  document.querySelectorAll('.stamp-toggle').forEach(el=>{
+    el.onclick=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); c.compareceu=!c.compareceu; if(c.compareceu){ if(!c.data) c.data=currentEvent().data||''; if(c.diasTrabalhados==null) c.diasTrabalhados=1; } await saveStaff(); renderShell(); };
+  });
+  ['f-data','f-entrada','f-saida','f-dias'].forEach(cls=>{
+    document.querySelectorAll('.'+cls).forEach(inp=>{
+      inp.onchange=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); const field=cls==='f-data'?'data':cls==='f-entrada'?'entrada':cls==='f-saida'?'saida':'diasTrabalhados'; c[field]=e.target.value; await saveStaff(); renderShell(); };
+    });
+  });
+  const btnPrint=document.getElementById('btnPrint');
+  if(btnPrint) btnPrint.onclick=()=>window.print();
+  const btnAprovar=document.getElementById('btnAprovar');
+  if(btnAprovar) btnAprovar.onclick=async ()=>{
+    if(!confirm('Confirma o fechamento da equipe? Após aprovar, o evento fica disponível na área de Pagamentos.')) return;
+    currentEvent().status='finalizado';
+    await saveEvents();
+    renderShell();
+    showToast('Fechamento aprovado.');
+  };
+  const btnReabrir=document.getElementById('btnReabrir');
+  if(btnReabrir) btnReabrir.onclick=async ()=>{
+    currentEvent().status='aberto';
+    await saveEvents();
+    renderShell();
+    showToast('Evento reaberto para ajustes.');
+  };
+}
+
+/* ================= INIT ================= */
+loadAll();
+</script>
+
+</body>
+</html>
