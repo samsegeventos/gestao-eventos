@@ -320,6 +320,7 @@ function calcValor(c, ev){ if(!c.compareceu) return 0; const dias=parseFloat(c.d
 function brl(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
 function maskValor(n){ return gestorUnlocked ? brl(n) : '•••••'; }
 function eventLink(id){ return `${location.origin}${location.pathname}?evento=${id}&modo=interesse`; }
+function eventLinkStatus(id){ return `${location.origin}${location.pathname}?evento=${id}&modo=status`; }
 function isLocalFile(){ return location.protocol==='file:'; }
 function copyText(text){ if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(text).then(()=>showToast('Link copiado.')).catch(()=>fallbackCopy(text)); } else fallbackCopy(text); }
 function fallbackCopy(text){ prompt('Copie o link abaixo:', text); }
@@ -355,6 +356,11 @@ async function loadAll(){
   if(paramModo==='interesse' && paramEvento){
     currentEventId = paramEvento;
     renderPublic();
+    return;
+  }
+  if(paramModo==='status' && paramEvento){
+    currentEventId = paramEvento;
+    renderPublicStatus();
     return;
   }
 
@@ -400,7 +406,7 @@ async function getEventStats(id){
   const valorTotal=s.filter(c=>c.escalado&&c.compareceu).reduce((sum,c)=>sum+calcValor(c,ev),0);
   const semFechamento = s.filter(c=>c.escalado).length===0;
   const pendentesPagamento = s.filter(c=>c.escalado&&c.compareceu&&!c.pago).length;
-  const stats={escaladosCount,valorTotal,interessadosCount:it.length,semFechamento,pendentesPagamento};
+  const stats={escaladosCount,valorTotal,interessadosCount:it.filter(p=>(p.status||'pendente')==='pendente').length,semFechamento,pendentesPagamento};
   eventStatsCache[id]=stats; return stats;
 }
 
@@ -428,22 +434,68 @@ function renderPublic(alreadySent){
         <div class="ev-meta">Cliente: ${escapeHtml(ev.cliente)} · Data: ${formatPeriodo(ev)}</div>
         <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Nome completo</label><input type="text" id="intNome" placeholder="Nome completo"></div>
         <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">CPF</label><input type="text" id="intCpf" placeholder="000.000.000-00"></div>
+        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Telefone (WhatsApp)</label><input type="text" id="intTelefone" placeholder="(00) 00000-0000"></div>
         <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Função</label><input type="text" id="intFuncao" placeholder="Ex: Vigilante, Porteiro, Supervisor"></div>
         <button class="btn btn-amber" id="btnEnviarInteresse" style="width:100%; padding:12px;">Tenho interesse em participar</button>
+        <div style="text-align:center; margin-top:14px;"><a href="${eventLinkStatus(currentEventId)}" style="color:var(--muted); font-size:12px;">Já se candidatou? Consulte o status aqui</a></div>
       </div>
     </div>`;
   document.getElementById('btnEnviarInteresse').onclick=async ()=>{
     const nome=document.getElementById('intNome').value.trim();
     const cpf=document.getElementById('intCpf').value.trim();
+    const telefone=document.getElementById('intTelefone').value.trim();
     const funcao=document.getElementById('intFuncao').value.trim();
     if(!nome){ showToast('Informe seu nome.'); return; }
     if(!cpf){ showToast('Informe seu CPF.'); return; }
+    if(!telefone){ showToast('Informe seu telefone.'); return; }
     if(!funcao){ showToast('Informe sua função.'); return; }
     const list=(await sGet('interessados:'+currentEventId))||[];
-    list.push({id:uid(),nome,cpf,funcao,criadoEm:new Date().toISOString()});
+    list.push({id:uid(),nome,cpf,telefone,funcao,status:'pendente',criadoEm:new Date().toISOString()});
     await sSet('interessados:'+currentEventId,list);
     renderPublic(true);
   };
+}
+
+/* ================= PUBLIC STATUS CHECK (no sidebar) ================= */
+function renderPublicStatus(){
+  document.querySelector('.mobile-topbar').style.display='none';
+  const root=document.getElementById('shell');
+  const ev=currentEvent();
+  if(!ev){
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Evento não encontrado</b>O link pode estar incorreto ou o evento foi removido.</div></div></div>`;
+    return;
+  }
+  function draw(resultHtml){
+    root.innerHTML=`
+      <div class="wrap-narrow">
+        <div class="interesse-page">
+          <div class="ev-name">${escapeHtml(ev.evento)}</div>
+          <div class="ev-meta">Consulta de status da convocação</div>
+          <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">CPF usado na candidatura</label><input type="text" id="statCpf" placeholder="000.000.000-00"></div>
+          <button class="btn btn-amber" id="btnConsultarStatus" style="width:100%; padding:12px;">Consultar</button>
+          ${resultHtml||''}
+        </div>
+      </div>`;
+    document.getElementById('btnConsultarStatus').onclick=async ()=>{
+      const cpf=document.getElementById('statCpf').value.trim();
+      if(!cpf){ showToast('Informe o CPF.'); return; }
+      const onlyDigits=s=>(s||'').replace(/\D/g,'');
+      const list=(await sGet('interessados:'+currentEventId))||[];
+      const found=list.filter(p=>onlyDigits(p.cpf)===onlyDigits(cpf)).pop();
+      if(!found){
+        draw(`<div class="empty" style="padding-top:20px;"><b>CPF não encontrado</b>Confira se digitou certo ou se já registrou interesse neste evento.</div>`);
+        return;
+      }
+      const status=found.status||'pendente';
+      const info = status==='aprovado'
+        ? {cor:'var(--teal)', titulo:'Convocação aprovada!', msg:'Você foi confirmado para este evento. Aguarde as orientações do supervisor.'}
+        : status==='recusado'
+          ? {cor:'var(--red)', titulo:'Convocação não confirmada', msg:'Neste evento sua candidatura não foi aprovada. Fique atento a próximos eventos.'}
+          : {cor:'var(--amber)', titulo:'Aguardando avaliação', msg:'Sua candidatura ainda está em análise pelo supervisor.'};
+      draw(`<div class="success-box" style="padding-top:20px;"><div class="ev-name" style="color:${info.cor};">${info.titulo}</div><div class="ev-meta" style="margin-bottom:0;">${info.msg}</div></div>`);
+    };
+  }
+  draw();
 }
 
 /* ================= SHELL (sidebar + main) ================= */
@@ -815,7 +867,7 @@ function renderEventoDetail(main){
       <button class="btn btn-danger btn-sm" id="btnDeleteEvent">Excluir</button>
     </div>
     <div class="subtabs">
-      <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.length}</span></div>
+      <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.filter(p=>(p.status||'pendente')==='pendente').length}</span></div>
       <div class="subtab ${subTab==='escala'?'active':''}" data-sub="escala">Escala Oficial<span class="count">${staff.filter(s=>s.escalado).length}</span></div>
       <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
       <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
@@ -846,6 +898,9 @@ function renderPreEscala(){
       <b style="color:var(--red);">O link não vai funcionar enquanto este arquivo estiver aberto localmente</b>
       Para o link ficar clicável no WhatsApp, este arquivo HTML precisa estar hospedado em um endereço da internet (com https://). Aberto direto do computador (file://), o endereço gerado fica inválido. Hospede o arquivo (ex: GitHub Pages, Netlify) e reabra por esse endereço para os links funcionarem.
     </div>` : '';
+  const statusLink = eventLinkStatus(currentEventId);
+  const pendentes = interessados.filter(p=>(p.status||'pendente')==='pendente');
+  const decididos = interessados.filter(p=>(p.status||'pendente')!=='pendente');
   return `
     <div class="card-title">Convocação — quem tem interesse</div>
     <div class="card-sub">Compartilhe o link abaixo com a equipe. Quem preencher o formulário (nome, CPF e função) registra o interesse; a confirmação final é feita na Escala Oficial.</div>
@@ -855,25 +910,43 @@ function renderPreEscala(){
       <button class="btn btn-amber btn-sm" id="btnCopyLink" style="align-self:flex-end;">Copiar link</button>
       <a class="btn btn-teal btn-sm" style="align-self:flex-end; text-decoration:none;" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Você foi convidado para o evento "'+ev.evento+'". Preencha o formulário para registrar interesse: '+link)}">Enviar no WhatsApp</a>
     </div>
-    ${interessados.length ? interessados.map(p=>`
+    <div class="link-box">
+      <div class="field" style="flex:1;"><label>Link para o candidato consultar o status da candidatura</label><input type="text" readonly value="${statusLink}" id="linkFieldStatus"></div>
+      <button class="btn btn-ghost btn-sm" id="btnCopyLinkStatus" style="align-self:flex-end;">Copiar link</button>
+    </div>
+    ${pendentes.length ? pendentes.map(p=>`
       <div class="interesse-row" data-id="${p.id}">
-        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(p.telefone):''}</div></div>
         <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
         <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
-      </div>`).join('') : `<div class="empty"><b>Ninguém manifestou interesse ainda</b>Compartilhe o link acima com a equipe.</div>`}
+      </div>`).join('') : `<div class="empty"><b>Ninguém aguardando avaliação</b>Compartilhe o link acima com a equipe.</div>`}
+    ${decididos.length ? `
+    <div class="card-sub" style="margin-top:18px;">Já avaliados</div>
+    ${decididos.map(p=>`
+      <div class="interesse-row" data-id="${p.id}">
+        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+        <span class="badge ${p.status==='aprovado'?'pago':'pendente'}" style="${p.status==='recusado'?'color:var(--red); border-color:var(--red);':''}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span>
+      </div>`).join('')}` : ''}
   `;
 }
 
 function renderEscalaOficial(){
+  const comTelefone = staff.filter(c=>c.telefone && c.telefone.trim());
   return `
     <div class="card-title">Equipe confirmada</div>
     <div class="card-sub">Colaboradores aprovados para este evento. O valor de cada um é calculado automaticamente pela função (ver "Valores por Função") e pelos dias trabalhados, registrados em Controle de Presença.</div>
     <div class="add-row">
       <div class="field"><label>Nome</label><input type="text" id="newNome" placeholder="Nome do colaborador"></div>
       <div class="field"><label>CPF</label><input type="text" id="newCpf" placeholder="000.000.000-00"></div>
+      <div class="field"><label>Telefone (WhatsApp)</label><input type="text" id="newTelefone" placeholder="(00) 00000-0000"></div>
       <div class="field"><label>Função</label><input type="text" id="newFuncao" placeholder="Ex: Vigilante"></div>
       <button class="btn btn-amber" id="btnAddStaff">+ Adicionar manualmente</button>
     </div>
+    ${staff.length ? `
+    <div style="margin-bottom:14px;">
+      <button class="btn btn-teal btn-sm" id="btnNotifyAll">Notificar convocação no WhatsApp (${comTelefone.length} com telefone)</button>
+      ${comTelefone.length<staff.length ? `<span style="color:var(--muted); font-size:12px; margin-left:8px;">${staff.length-comTelefone.length} colaborador(es) sem telefone cadastrado não serão notificados.</span>` : ''}
+    </div>` : ''}
     ${staff.length ? `
     <table>
       <thead><tr><th>Nome</th><th>Função</th><th>CPF</th><th>Escalado</th><th></th></tr></thead>
@@ -1102,6 +1175,8 @@ async function renderRelatorios(main){
 function attachDetailHandlers(){
   const linkBtn=document.getElementById('btnCopyLink');
   if(linkBtn) linkBtn.onclick=()=>copyText(eventLink(currentEventId));
+  const linkBtnStatus=document.getElementById('btnCopyLinkStatus');
+  if(linkBtnStatus) linkBtnStatus.onclick=()=>copyText(eventLinkStatus(currentEventId));
 
   const btnNewFuncaoEvento=document.getElementById('btnNewFuncaoEvento');
   if(btnNewFuncaoEvento) btnNewFuncaoEvento.onclick=()=>openFuncaoEventoForm();
@@ -1123,8 +1198,8 @@ function attachDetailHandlers(){
     btn.onclick=async (e)=>{
       const id=e.target.closest('.interesse-row').dataset.id;
       const p=interessados.find(i=>i.id===id);
-      staff.push({id:uid(), eventId:currentEventId, nome:p.nome, cpf:p.cpf||'', funcao:p.funcao||'', escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
-      interessados=interessados.filter(i=>i.id!==id);
+      staff.push({id:uid(), eventId:currentEventId, nome:p.nome, cpf:p.cpf||'', telefone:p.telefone||'', funcao:p.funcao||'', escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
+      p.status='aprovado';
       await saveStaff(); await saveInteressados();
       subTab='escala';
       renderShell();
@@ -1132,17 +1207,31 @@ function attachDetailHandlers(){
     };
   });
   document.querySelectorAll('.btn-reject').forEach(btn=>{
-    btn.onclick=async (e)=>{ const id=e.target.closest('.interesse-row').dataset.id; interessados=interessados.filter(i=>i.id!==id); await saveInteressados(); renderShell(); };
+    btn.onclick=async (e)=>{ const id=e.target.closest('.interesse-row').dataset.id; const p=interessados.find(i=>i.id===id); p.status='recusado'; await saveInteressados(); renderShell(); };
   });
 
   const btnAdd=document.getElementById('btnAddStaff');
   if(btnAdd) btnAdd.onclick=async ()=>{
     const nome=document.getElementById('newNome').value.trim();
     const cpf=document.getElementById('newCpf').value.trim();
+    const telefone=document.getElementById('newTelefone').value.trim();
     const funcao=document.getElementById('newFuncao').value.trim();
     if(!nome){ showToast('Informe o nome do colaborador.'); return; }
-    staff.push({id:uid(), eventId:currentEventId, nome, cpf, funcao, escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
+    staff.push({id:uid(), eventId:currentEventId, nome, cpf, telefone, funcao, escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
     await saveStaff(); renderShell(); showToast('Colaborador adicionado.');
+  };
+  const btnNotifyAll=document.getElementById('btnNotifyAll');
+  if(btnNotifyAll) btnNotifyAll.onclick=()=>{
+    const ev=currentEvent();
+    const alvos=staff.filter(c=>c.telefone && c.telefone.trim());
+    if(!alvos.length){ showToast('Nenhum colaborador com telefone cadastrado.'); return; }
+    if(!confirm(`Isso vai abrir ${alvos.length} aba(s) do WhatsApp, uma por colaborador. Em cada uma, você só precisa clicar em "Enviar". Continuar?`)) return;
+    alvos.forEach((c,i)=>{
+      let numero=(c.telefone||'').replace(/\D/g,'');
+      if(numero.length===10 || numero.length===11) numero='55'+numero; // adiciona DDI Brasil se a pessoa não colocou
+      const texto=encodeURIComponent(`Olá ${c.nome}, você foi convocado(a) para o evento "${ev.evento}" (${formatPeriodo(ev)}). Aguardamos você!`);
+      setTimeout(()=>window.open(`https://wa.me/${numero}?text=${texto}`,'_blank'), i*400);
+    });
   };
   document.querySelectorAll('.chk-escalado').forEach(chk=>{
     chk.onchange=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); c.escalado=e.target.checked; await saveStaff(); renderShell(); };
