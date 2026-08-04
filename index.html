@@ -205,10 +205,83 @@
 
 <div class="toast" id="toast"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
-/* ================= STORAGE HELPERS ================= */
-async function sGet(key){ try{ const r = await window.storage.get(key,true); return r?JSON.parse(r.value):null; }catch(e){ return null; } }
-async function sSet(key,value){ try{ await window.storage.set(key, JSON.stringify(value), true); return true; }catch(e){ console.error(e); showToast('Falha ao salvar. Tente novamente.'); return false; } }
+/* ================= SUPABASE ================= */
+const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_xNpRMz2bBwC2ffH50nfPNw_6dV8ZVv4';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+/* ================= STORAGE HELPERS =================
+   Mapeia as mesmas chaves usadas antes (events, clients, gestorPin,
+   staff:<id>, interessados:<id>) para as tabelas do Supabase, sem
+   precisar alterar o resto do código que já chama sGet/sSet. */
+async function sGet(key){
+  try{
+    if(key==='events'){
+      const {data,error}=await sb.from('eventos').select('id,dados');
+      if(error) throw error;
+      return (data||[]).map(r=>({...(r.dados||{}),id:r.id}));
+    }
+    if(key==='clients'||key==='gestorPin'){
+      const {data,error}=await sb.from('app_kv').select('value').eq('key',key).maybeSingle();
+      if(error) throw error;
+      return data ? data.value : null;
+    }
+    if(key.startsWith('staff:')){
+      const id=key.slice(6);
+      const {data,error}=await sb.from('eventos').select('dados').eq('id',id).maybeSingle();
+      if(error) throw error;
+      return (data && data.dados && data.dados.staff) ? data.dados.staff : null;
+    }
+    if(key.startsWith('interessados:')){
+      const id=key.slice(13);
+      const {data,error}=await sb.from('interessados').select('*').eq('evento_id',id).order('id',{ascending:true});
+      if(error) throw error;
+      return (data||[]).map(r=>({id:String(r.id),nome:r.nome,cpf:r.cpf,telefone:r.telefone||'',funcao:r.funcao,status:r.status||'pendente',criadoEm:r.criado_em||null}));
+    }
+    return null;
+  }catch(e){ console.error(e); return null; }
+}
+async function sSet(key,value){
+  try{
+    if(key==='events'){
+      const rows=(value||[]).map(e=>({id:e.id,dados:e}));
+      if(rows.length){ const {error}=await sb.from('eventos').upsert(rows); if(error) throw error; }
+      const ids=(value||[]).map(e=>`"${e.id}"`);
+      const del = ids.length ? sb.from('eventos').delete().not('id','in',`(${ids.join(',')})`) : sb.from('eventos').delete().neq('id','__none__');
+      const {error:delErr}=await del;
+      if(delErr) throw delErr;
+      return true;
+    }
+    if(key==='clients'||key==='gestorPin'){
+      const {error}=await sb.from('app_kv').upsert({key,value});
+      if(error) throw error;
+      return true;
+    }
+    if(key.startsWith('staff:')){
+      const id=key.slice(6);
+      const {data}=await sb.from('eventos').select('dados').eq('id',id).maybeSingle();
+      const dados=(data && data.dados) ? data.dados : {};
+      dados.staff=value;
+      const {error}=await sb.from('eventos').upsert({id,dados});
+      if(error) throw error;
+      return true;
+    }
+    if(key.startsWith('interessados:')){
+      const id=key.slice(13);
+      const {error:delErr}=await sb.from('interessados').delete().eq('evento_id',id);
+      if(delErr) throw delErr;
+      if(value && value.length){
+        const rows=value.map(p=>({evento_id:id,nome:p.nome,cpf:p.cpf,telefone:p.telefone||'',funcao:p.funcao,status:p.status||'pendente'}));
+        const {error}=await sb.from('interessados').insert(rows);
+        if(error) throw error;
+      }
+      return true;
+    }
+    return false;
+  }catch(e){ console.error(e); showToast('Falha ao salvar. Tente novamente.'); return false; }
+}
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2600); }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
