@@ -246,10 +246,21 @@ async function sGet(key){
 async function sSet(key,value){
   try{
     if(key==='events'){
-      const rows=(value||[]).map(e=>({id:e.id,dados:e}));
+      const ids=(value||[]).map(e=>e.id);
+      let staffMap={};
+      if(ids.length){
+        const {data:existing,error:exErr}=await sb.from('eventos').select('id,dados').in('id',ids);
+        if(exErr) throw exErr;
+        (existing||[]).forEach(r=>{ if(r.dados && r.dados.staff) staffMap[r.id]=r.dados.staff; });
+      }
+      const rows=(value||[]).map(e=>{
+        const dados={...e};
+        if(staffMap[e.id]) dados.staff=staffMap[e.id]; // preserva a equipe já salva, que não vive no objeto local do evento
+        return {id:e.id,dados};
+      });
       if(rows.length){ const {error}=await sb.from('eventos').upsert(rows); if(error) throw error; }
-      const ids=(value||[]).map(e=>`"${e.id}"`);
-      const del = ids.length ? sb.from('eventos').delete().not('id','in',`(${ids.join(',')})`) : sb.from('eventos').delete().neq('id','__none__');
+      const idsQuoted=ids.map(id=>`"${id}"`);
+      const del = idsQuoted.length ? sb.from('eventos').delete().not('id','in',`(${idsQuoted.join(',')})`) : sb.from('eventos').delete().neq('id','__none__');
       const {error:delErr}=await del;
       if(delErr) throw delErr;
       return true;
