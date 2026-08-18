@@ -830,30 +830,70 @@ function openEventForm(existing){
   if(!clienteNome || !evento.trim()){ showToast('Preencha cliente e evento.'); return; }
 
   const dataInicioDefault = existing ? existing.data : null;
-  const dataInicio = askDate('Data de início do evento (DD/MM/AAAA):', dataInicioDefault);
-  if(dataInicio===undefined) return;
+const dataInicio = askDate('Data de início do evento (DD/MM/AAAA):', dataInicioDefault);
+if(dataInicio===undefined) return;
 
-  const dataFimDefault = existing ? existing.dataFim : dataInicio;
-  const dataFim = askDate('Data de término do evento (DD/MM/AAAA) — deixe igual à data de início se for um único dia:', dataFimDefault || dataInicio);
-  if(dataFim===undefined) return;
+const horaInicioDefault = existing ? existing.horaInicio : '';
+const horaInicio = prompt('Horário de início do evento (HH:MM):', horaInicioDefault);
+if(horaInicio===null) return;
 
-  const linkDefault = existing ? existing.linkValidoAte : dataFim;
-  const linkValidoAte = askDate('Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:', linkDefault || dataFim);
-  if(linkValidoAte===undefined) return;
-
-  (async ()=>{
-    if(existing){
-      existing.cliente=clienteNome; existing.evento=evento.trim();
-      existing.data=dataInicio; existing.dataFim=dataFim; existing.linkValidoAte=linkValidoAte;
-    } else {
-      events.push({id:uid(), cliente:clienteNome, evento:evento.trim(), data:dataInicio, dataFim:dataFim, linkValidoAte:linkValidoAte, status:'aberto'});
-    }
-    await saveEvents();
-    renderMain();
-    showToast('Evento salvo. Use "Pré-Escala" para começar a escalar a equipe.');
-  })();
+if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaInicio.trim())){
+  showToast('Horário de início inválido. Use HH:MM.');
+  return;
 }
 
+const dataFimDefault = existing ? existing.dataFim : dataInicio;
+const dataFim = askDate(
+  'Data de término do evento (DD/MM/AAAA) — deixe igual à data de início se for um único dia:',
+  dataFimDefault || dataInicio
+);
+if(dataFim===undefined) return;
+
+const horaFimDefault = existing ? existing.horaFim : horaInicio;
+const horaFim = prompt('Horário de término do evento (HH:MM):', horaFimDefault);
+if(horaFim===null) return;
+
+if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim.trim())){
+  showToast('Horário de término inválido. Use HH:MM.');
+  return;
+}
+
+const linkDefault = existing ? existing.linkValidoAte : dataFim;
+const linkValidoAte = askDate(
+  'Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:',
+  linkDefault || dataFim
+);
+if(linkValidoAte===undefined) return;
+
+(async ()=>{
+  if(existing){
+    existing.cliente=clienteNome;
+    existing.evento=evento.trim();
+    existing.data=dataInicio;
+    existing.horaInicio=horaInicio.trim();
+    existing.dataFim=dataFim;
+    existing.horaFim=horaFim.trim();
+    existing.linkValidoAte=linkValidoAte;
+  } else {
+    events.push({
+      id:uid(),
+      cliente:clienteNome,
+      evento:evento.trim(),
+      data:dataInicio,
+      horaInicio:horaInicio.trim(),
+      dataFim:dataFim,
+      horaFim:horaFim.trim(),
+      linkValidoAte:linkValidoAte,
+      status:'aberto'
+    });
+  }
+
+  await saveEvents();
+  renderMain();
+  showToast('Evento salvo. Use "Pré-Escala" para começar a escalar a equipe.');
+})();
+    }
+   
 async function deleteCurrentEvent(){
   const ev=currentEvent(); if(!ev) return;
   if(!confirm(`Excluir o evento "${ev.evento}" (${ev.cliente})? Isso também apaga a escala e presença registradas.`)) return;
