@@ -424,46 +424,143 @@ async function getEventStats(id){
 /* ================= PUBLIC INTEREST FORM (no sidebar) ================= */
 function renderPublic(alreadySent){
   document.querySelector('.mobile-topbar').style.display='none';
+
   const root=document.getElementById('shell');
   const ev=currentEvent();
+
   if(!ev){
-    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Evento não encontrado</b>O link pode estar incorreto ou o evento foi removido.</div></div></div>`;
+    root.innerHTML='<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Evento não encontrado</b> O link pode estar incorreto ou o evento foi removido.</div></div></div>';
     return;
   }
+
   if(alreadySent){
-    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Interesse registrado!</div><div class="ev-meta" style="margin-bottom:0;">O supervisor de <b>${escapeHtml(ev.evento)}</b> vai avaliar sua convocação. Você será chamado se for confirmado.</div></div></div></div>`;
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Interesse registrado</div><div class="ev-meta" style="margin-bottom:0;">O supervisor de <b>${escapeHtml(ev.evento)}</b> vai avaliar sua convocação.</div></div></div></div>`;
     return;
   }
+
   if(ev.linkValidoAte && todayISO() > ev.linkValidoAte){
-    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Link expirado</b>O prazo para registrar interesse neste evento (até ${formatDate(ev.linkValidoAte)}) já passou. Fale com o supervisor caso ainda tenha interesse.</div></div></div>`;
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Link expirado</b> O prazo para registrar interesse neste evento (até ${formatDate(ev.linkValidoAte)}) já passou. Fale com o supervisor caso ainda tenha interesse.</div></div></div>`;
     return;
   }
+
   root.innerHTML=`
     <div class="wrap-narrow">
       <div class="interesse-page">
+
         <div class="ev-name">${escapeHtml(ev.evento)}</div>
-        <div class="ev-meta">Data: ${formatPeriodo(ev)}</div>
-        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Nome completo</label><input type="text" id="intNome" placeholder="Nome completo"></div>
-        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">CPF</label><input type="text" id="intCpf" placeholder="000.000.000-00"></div>
-        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Telefone (WhatsApp)</label><input type="text" id="intTelefone" placeholder="(00) 00000-0000"></div>
-        <div class="field"><label style="font-size:11px; color:var(--muted); text-transform:uppercase;">Função</label><input type="text" id="intFuncao" placeholder="Ex: Vigilante, Porteiro, Supervisor"></div>
-        <button class="btn btn-amber" id="btnEnviarInteresse" style="width:100%; padding:12px;">Tenho interesse em participar</button>
-        <div style="text-align:center; margin-top:14px;"><a href="${eventLinkStatus(currentEventId)}" style="color:var(--muted); font-size:12px;">Já se candidatou? Consulte o status aqui</a></div>
+        <div class="ev-meta">Data: ${formatDate(ev.data)}</div>
+
+        <div class="field">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">CPF</label>
+          <input
+            type="text"
+            id="intCpf"
+            placeholder="000.000.000-00"
+            maxlength="14"
+          >
+        </div>
+
+        <button
+          class="btn btn-amber"
+          id="btnVerificarCpf"
+          style="width:100%;padding:12px;"
+        >
+          Verificar CPF
+        </button>
+
+        <div id="resultadoAutorizacao" style="margin-top:16px;"></div>
+
       </div>
-    </div>`;
-  document.getElementById('btnEnviarInteresse').onclick=async ()=>{
-    const nome=document.getElementById('intNome').value.trim();
+    </div>
+  `;
+
+  document.getElementById('btnVerificarCpf').onclick=async ()=>{
+
     const cpf=document.getElementById('intCpf').value.trim();
-    const telefone=document.getElementById('intTelefone').value.trim();
-    const funcao=document.getElementById('intFuncao').value.trim();
-    if(!nome){ showToast('Informe seu nome.'); return; }
-    if(!cpf){ showToast('Informe seu CPF.'); return; }
-    if(!telefone){ showToast('Informe seu telefone.'); return; }
-    if(!funcao){ showToast('Informe sua função.'); return; }
-    const list=(await sGet('interessados:'+currentEventId))||[];
-    list.push({id:uid(),nome,cpf,telefone,funcao,status:'pendente',criadoEm:new Date().toISOString()});
-    await sSet('interessados:'+currentEventId,list);
-    renderPublic(true);
+
+    if(!cpf){
+      showToast('Informe seu CPF.');
+      return;
+    }
+
+    const cpfLimpo=cpf.replace(/\D/g,'');
+
+    if(cpfLimpo.length!==11){
+      showToast('Informe um CPF válido.');
+      return;
+    }
+
+    const btn=document.getElementById('btnVerificarCpf');
+    const resultado=document.getElementById('resultadoAutorizacao');
+
+    btn.disabled=true;
+    btn.textContent='Verificando...';
+
+    try{
+
+      const {data,error}=await sb.rpc(
+        'verificar_cpf_autorizado',
+        {
+          p_evento_id: ev.id,
+          p_cpf: cpfLimpo
+        }
+      );
+
+      if(error) throw error;
+
+      const registro=Array.isArray(data) ? data[0] : data;
+
+      if(!registro || registro.autorizado!==true){
+
+        resultado.innerHTML=`
+          <div class="empty">
+            <b>CPF não autorizado</b><br>
+            Este CPF não está autorizado para trabalhar neste evento.
+            Entre em contato com o responsável pelo evento.
+          </div>
+        `;
+
+        btn.disabled=false;
+        btn.textContent='Verificar CPF';
+        return;
+      }
+
+      resultado.innerHTML=`
+        <div class="success-box">
+          <div class="check">✓</div>
+
+          <div class="ev-name">CPF autorizado</div>
+
+          <div class="ev-meta" style="margin-top:10px;">
+            <b>Nome:</b> ${escapeHtml(registro.nome || '')}
+          </div>
+
+          <div class="ev-meta" style="margin-top:6px;">
+            <b>Função autorizada:</b> ${escapeHtml(registro.funcao || '')}
+          </div>
+
+          <div style="margin-top:14px;font-size:12px;color:var(--muted);">
+            Seus dados foram autorizados para este evento.
+          </div>
+        </div>
+      `;
+
+      btn.style.display='none';
+
+    }catch(error){
+
+      console.error(error);
+
+      resultado.innerHTML=`
+        <div class="empty">
+          <b>Não foi possível verificar o CPF.</b><br>
+          Tente novamente.
+        </div>
+      `;
+
+      btn.disabled=false;
+      btn.textContent='Verificar CPF';
+    }
   };
 }
 
