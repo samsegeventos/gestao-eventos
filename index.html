@@ -1473,27 +1473,18 @@ async function loadCpfsAutorizadosEvento(){
   if(error){ console.error(error); cpfsAutorizadosLista=[]; return; }
   cpfsAutorizadosLista=data||[];
 }
-function renderCpfsAutorizadosTab(){
-  if(!gestorUnlocked) return lockScreenHtml('A gestão de CPFs autorizados só fica visível para o gestor.');
+function filtrarCpfsAutorizados(){
   const buscaDigits=cpfsAutorizadosBusca.replace(/\D/g,'');
   const buscaTexto=cpfsAutorizadosBusca.trim().toLowerCase();
-  const lista=cpfsAutorizadosLista.filter(c=>{
+  return cpfsAutorizadosLista.filter(c=>{
     if(!cpfsAutorizadosBusca.trim()) return true;
     const matchCpf = buscaDigits && (c.cpf||'').includes(buscaDigits);
     const matchNome = (c.nome||'').toLowerCase().includes(buscaTexto);
     return matchCpf || matchNome;
   });
-  return `
-    <div class="card-title">CPFs autorizados neste evento</div>
-    <div class="card-sub">A autorização pertence sempre a este evento (CPF + evento + função) — o mesmo CPF pode estar autorizado aqui e não autorizado em outro evento.</div>
-    <div class="add-row">
-      <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
-      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
-      <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
-      <div class="field"><label>Função</label><input type="text" id="novaFuncaoAut" placeholder="Ex: Vigilante"></div>
-      <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
-    </div>
-    ${lista.length ? `
+}
+function renderCpfsAutorizadosLista(lista){
+  return lista.length ? `
     <table>
       <thead><tr><th>CPF</th><th>Nome</th><th>Função</th><th>Status</th><th></th></tr></thead>
       <tbody>
@@ -1511,7 +1502,21 @@ function renderCpfsAutorizadosTab(){
             </td>
           </tr>`).join('')}
       </tbody>
-    </table>` : `<div class="empty"><b>${cpfsAutorizadosBusca.trim()?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${cpfsAutorizadosBusca.trim()?'':'Use o formulário acima para autorizar o primeiro.'}</div>`}
+    </table>` : `<div class="empty"><b>${cpfsAutorizadosBusca.trim()?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${cpfsAutorizadosBusca.trim()?'':'Use o formulário acima para autorizar o primeiro.'}</div>`;
+}
+function renderCpfsAutorizadosTab(){
+  if(!gestorUnlocked) return lockScreenHtml('A gestão de CPFs autorizados só fica visível para o gestor.');
+  return `
+    <div class="card-title">CPFs autorizados neste evento</div>
+    <div class="card-sub">A autorização pertence sempre a este evento (CPF + evento + função) — o mesmo CPF pode estar autorizado aqui e não autorizado em outro evento.</div>
+    <div class="add-row">
+      <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
+      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
+      <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
+      <div class="field"><label>Função</label><input type="text" id="novaFuncaoAut" placeholder="Ex: Vigilante"></div>
+      <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
+    </div>
+    <div id="cpfsAutorizadosTabela">${renderCpfsAutorizadosLista(filtrarCpfsAutorizados())}</div>
   `;
 }
 function attachCpfsAutorizadosHandlers(){
@@ -1519,10 +1524,14 @@ function attachCpfsAutorizadosHandlers(){
   if(cpfInp) cpfInp.oninput=(e)=>maskCpfInput(e.target);
   const buscaInp=document.getElementById('buscaCpfAutorizado');
   if(buscaInp) buscaInp.oninput=(e)=>{
+    // Filtra só em memória e atualiza somente a tabela — nunca recria
+    // o próprio input de busca, para não perder o foco a cada tecla.
     cpfsAutorizadosBusca=e.target.value;
-    const painel=document.getElementById('panelContent');
-    painel.innerHTML=renderCpfsAutorizadosTab();
-    attachCpfsAutorizadosHandlers();
+    const tabela=document.getElementById('cpfsAutorizadosTabela');
+    if(tabela){
+      tabela.innerHTML=renderCpfsAutorizadosLista(filtrarCpfsAutorizados());
+      attachCpfsAutorizadosRowHandlers();
+    }
   };
   const btnAdd=document.getElementById('btnAddCpfAut');
   if(btnAdd) btnAdd.onclick=async ()=>{
@@ -1534,6 +1543,9 @@ function attachCpfsAutorizadosHandlers(){
     const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
     if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
   };
+  attachCpfsAutorizadosRowHandlers();
+}
+function attachCpfsAutorizadosRowHandlers(){
   document.querySelectorAll('.btn-editar-cpf-aut').forEach(btn=>{
     btn.onclick=async ()=>{
       const cpf=btn.closest('tr').dataset.cpf;
