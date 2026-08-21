@@ -353,6 +353,10 @@ let escalaDias = [];
 let presencasNovas = [];
 let diaSelecionadoPresenca = null;
 let fechamentoDados = [];
+/* ---- CPFs Autorizados (por evento) ---- */
+let cpfsAutorizadosEventoId = null;
+let cpfsAutorizadosLista = [];
+let cpfsAutorizadosBusca = '';
 let subTab = 'preescala';
 let section = 'dashboard';    // dashboard | clientes | eventos | evento | pagamentos | relatorios | interesse
 let dashMonth = new Date().toISOString().slice(0,7);
@@ -707,6 +711,7 @@ function navItems(){
       </div>` : ''}
       <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
       <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
+      <div class="nav-item ${section==='cpfsAutorizados'?'active':''}" data-nav="cpfsAutorizados"><span class="ic">🪪</span> CPFs Autorizados</div>
     </div>
     <div class="nav-group" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
       <div class="nav-item" id="navGestorToggle"><span class="ic">${gestorUnlocked?'🔓':'🔒'}</span> ${gestorUnlocked?'Bloquear valores':'Modo Gestor'}</div>
@@ -764,6 +769,7 @@ async function renderMain(){
   if(section==='evento') return renderEventoDetail(main);
   if(section==='pagamentos') return renderPagamentos(main);
   if(section==='relatorios') return renderRelatorios(main);
+  if(section==='cpfsAutorizados') return renderCpfsAutorizados(main);
 }
 
 /* ================= DASHBOARD ================= */
@@ -1446,6 +1452,121 @@ function attachFechamentoHandlers(){
       if(isNaN(novoDesconto) || novoDesconto<0){ showToast('Desconto inválido.'); return; }
       const r=await chamarRpcGestor('atualizar_desconto_participacao',{p_participacao_id:participacaoId, p_desconto:novoDesconto});
       if(r.ok){ showToast('Fechamento recalculado.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+}
+
+/* ================= CPFs AUTORIZADOS (por evento) ================= */
+async function loadCpfsAutorizadosEvento(){
+  if(!cpfsAutorizadosEventoId){ cpfsAutorizadosLista=[]; return; }
+  const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:cpfsAutorizadosEventoId});
+  if(error){ console.error(error); showToast('Erro ao carregar autorizações.'); cpfsAutorizadosLista=[]; return; }
+  cpfsAutorizadosLista=data||[];
+}
+async function renderCpfsAutorizados(main){
+  if(!gestorUnlocked){
+    main.innerHTML=`<div class="page-head"><div><h2>CPFs Autorizados</h2><div class="sub">Quem pode confirmar participação em cada evento</div></div></div>${lockScreenHtml('A gestão de autorizações só fica visível para o gestor.')}`;
+    attachLockHandler(()=>renderMain());
+    return;
+  }
+  main.innerHTML=`
+    <div class="page-head"><div><h2>CPFs Autorizados</h2><div class="sub">Selecione o evento para autorizar/desautorizar CPFs — a autorização pertence ao evento, não é global.</div></div></div>
+    <div class="field" style="max-width:380px;">
+      <label>Evento</label>
+      <select id="selEventoCpfs">
+        <option value="">Selecione um evento...</option>
+        ${events.map(e=>`<option value="${e.id}" ${e.id===cpfsAutorizadosEventoId?'selected':''}>${escapeHtml(e.evento)} — ${formatPeriodo(e)}</option>`).join('')}
+      </select>
+    </div>
+    <div id="cpfsAutorizadosPanel" style="margin-top:16px;"></div>
+  `;
+  document.getElementById('selEventoCpfs').onchange=async (e)=>{
+    cpfsAutorizadosEventoId=e.target.value||null;
+    cpfsAutorizadosBusca='';
+    await loadCpfsAutorizadosEvento();
+    renderMain();
+  };
+  if(cpfsAutorizadosEventoId){
+    document.getElementById('cpfsAutorizadosPanel').innerHTML=renderCpfsAutorizadosPanel();
+    attachCpfsAutorizadosHandlers();
+  }
+}
+function renderCpfsAutorizadosPanel(){
+  const busca=cpfsAutorizadosBusca.trim().toLowerCase();
+  const lista=cpfsAutorizadosLista.filter(c=>!busca || (c.cpf||'').includes(busca) || (c.nome||'').toLowerCase().includes(busca));
+  return `
+    <div class="add-row">
+      <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
+      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00"></div>
+      <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
+      <div class="field"><label>Função</label><input type="text" id="novaFuncaoAut" placeholder="Ex: Vigilante"></div>
+      <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
+    </div>
+    ${lista.length ? `
+    <table>
+      <thead><tr><th>CPF</th><th>Nome</th><th>Função</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${lista.map(c=>`
+          <tr data-cpf="${c.cpf}">
+            <td class="mono">${escapeHtml(c.cpf)}</td>
+            <td>${escapeHtml(c.nome||'—')}</td>
+            <td>${escapeHtml(c.funcao||'—')}</td>
+            <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
+            <td>
+              <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
+              ${c.autorizado
+                ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
+                : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>` : `<div class="empty"><b>${busca?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${busca?'':'Use o formulário acima para autorizar o primeiro.'}</div>`}
+  `;
+}
+function attachCpfsAutorizadosHandlers(){
+  const buscaInp=document.getElementById('buscaCpfAutorizado');
+  if(buscaInp) buscaInp.oninput=(e)=>{
+    cpfsAutorizadosBusca=e.target.value;
+    const painel=document.getElementById('cpfsAutorizadosPanel');
+    painel.innerHTML=renderCpfsAutorizadosPanel();
+    attachCpfsAutorizadosHandlers();
+  };
+  const btnAdd=document.getElementById('btnAddCpfAut');
+  if(btnAdd) btnAdd.onclick=async ()=>{
+    const cpf=document.getElementById('novoCpfAut').value.trim();
+    const nome=document.getElementById('novoNomeAut').value.trim();
+    const funcao=document.getElementById('novaFuncaoAut').value.trim();
+    if(!cpf){ showToast('Informe o CPF.'); return; }
+    if(!funcao){ showToast('Informe a função.'); return; }
+    const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
+    if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+  };
+  document.querySelectorAll('.btn-editar-cpf-aut').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const cpf=btn.closest('tr').dataset.cpf;
+      const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
+      const novoNome=prompt('Nome:', atual.nome||'');
+      if(novoNome===null) return;
+      const novaFuncao=prompt('Função:', atual.funcao||'');
+      if(novaFuncao===null) return;
+      if(!novaFuncao.trim()){ showToast('Função é obrigatória.'); return; }
+      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:novoNome, p_funcao:novaFuncao});
+      if(r.ok){ showToast('Autorização atualizada.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+    };
+  });
+  document.querySelectorAll('.btn-desautorizar').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const cpf=btn.closest('tr').dataset.cpf;
+      if(!confirm(`Desautorizar o CPF ${cpf} neste evento? Ele não conseguirá mais confirmar participação, a menos que seja reativado depois.`)) return;
+      const r=await chamarRpcGestor('desautorizar_cpf_evento',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf});
+      if(r.ok){ showToast('CPF desautorizado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+    };
+  });
+  document.querySelectorAll('.btn-reativar').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const cpf=btn.closest('tr').dataset.cpf;
+      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:null, p_funcao:null});
+      if(r.ok){ showToast('CPF reativado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
     };
   });
 }
