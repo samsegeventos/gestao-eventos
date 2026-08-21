@@ -343,6 +343,16 @@ let gestorUnlocked = false;
 let currentEventId = null;
 let staff = [];
 let interessados = [];
+/* ---- Etapa 2: dados das tabelas novas (colaboradores/evento_dias/
+   participacoes/participacao_dias/presencas), carregados à parte do
+   staff[] legado. Só populados quando gestorUnlocked (RPCs exigem
+   sessão authenticated, exceto evento_dias que tem SELECT aberto). */
+let eventoDias = [];
+let participacoesNovas = [];
+let escalaDias = [];
+let presencasNovas = [];
+let diaSelecionadoPresenca = null;
+let fechamentoDados = [];
 let subTab = 'preescala';
 let section = 'dashboard';    // dashboard | clientes | eventos | evento | pagamentos | relatorios | interesse
 let dashMonth = new Date().toISOString().slice(0,7);
@@ -355,6 +365,9 @@ const paramModo = params.get('modo');
 
 /* ================= LOAD ================= */
 async function loadAll(){
+  const {data:{session}} = await sb.auth.getSession();
+  gestorUnlocked = !!session;
+  sb.auth.onAuthStateChange((_evt, sess)=>{ gestorUnlocked = !!sess; });
   events = (await sGet('events')) || [];
   events.forEach(e=>{
     if(!e.status) e.status='aberto';
@@ -385,22 +398,71 @@ async function saveStaff(){ await sSet('staff:'+currentEventId, staff); }
 async function saveInteressados(){ await sSet('interessados:'+currentEventId, interessados); }
 function currentEvent(){ return events.find(e=>e.id===currentEventId); }
 
+/* ================= ETAPA 2 — dados novos (colaboradores/evento_dias/
+   participacoes/participacao_dias/presencas) ================= */
+async function loadDiasEscalaPresenca(){
+  if(!currentEventId){ eventoDias=[]; participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
+  const {data:dias,error:errDias}=await sb.from('evento_dias').select('*').eq('evento_id',currentEventId).order('data',{ascending:true});
+  if(errDias){ console.error(errDias); }
+  eventoDias=dias||[];
+  if(diaSelecionadoPresenca==null && eventoDias.length) diaSelecionadoPresenca=eventoDias[0].id;
+  if(!gestorUnlocked){ participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
+  try{
+    const [{data:parts,error:e1},{data:esc,error:e2},{data:pres,error:e3},{data:fech,error:e4}]=await Promise.all([
+      sb.rpc('listar_participacoes_evento',{p_evento_id:currentEventId}),
+      sb.rpc('listar_escala_evento',{p_evento_id:currentEventId}),
+      sb.rpc('listar_presencas_evento',{p_evento_id:currentEventId}),
+      sb.rpc('fechamento_evento',{p_evento_id:currentEventId})
+    ]);
+    if(e1) throw e1; if(e2) throw e2; if(e3) throw e3; if(e4) throw e4;
+    participacoesNovas=parts||[]; escalaDias=esc||[]; presencasNovas=pres||[]; fechamentoDados=fech||[];
+  }catch(err){
+    console.error(err);
+    participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[];
+  }
+}
+function escaladoNoDia(participacaoId, eventoDiaId){
+  const r=escalaDias.find(x=>x.participacao_id===participacaoId && x.evento_dia_id===eventoDiaId);
+  return !!(r && r.escalado);
+}
+function presencaDoDia(participacaoId, eventoDiaId){
+  return presencasNovas.find(x=>x.participacao_id===participacaoId && x.evento_dia_id===eventoDiaId) || null;
+}
+async function chamarRpcGestor(nome, params){
+  try{
+    const {data,error}=await sb.rpc(nome, params);
+    if(error) throw error;
+    return {ok:true, data};
+  }catch(err){
+    console.error(err);
+    showToast('Erro: '+(err.message||'não foi possível concluir a ação.'));
+    return {ok:false, error:err};
+  }
+}
+
+/* Autenticação real do gestor via Supabase Auth (substitui o PIN
+   client-side em app_kv). O ponto de entrada na navegação não muda —
+   continua sendo o mesmo item "Modo Gestor"/attachLockHandler; só o
+   que acontece por trás é diferente agora. */
 async function tryUnlockGestor(){
   if(gestorUnlocked) return true;
-  let stored = await sGet('gestorPin');
-  if(stored===null){
-    const novo = prompt('Ainda não existe uma senha do gestor. Defina uma senha para proteger os valores e pagamentos:');
-    if(!novo || !novo.trim()) return false;
-    stored = novo.trim();
-    await sSet('gestorPin', stored);
-  }
-  const tentativa = prompt('Digite a senha do gestor para ver os valores:');
-  if(tentativa===null) return false;
-  if(tentativa===stored){ gestorUnlocked=true; showToast('Área do gestor desbloqueada.'); return true; }
-  showToast('Senha incorreta.');
-  return false;
+  const email = prompt('E-mail do gestor:');
+  if(!email || !email.trim()) return false;
+  const senha = prompt('Senha:');
+  if(!senha) return false;
+  const {data,error} = await sb.auth.signInWithPassword({email:email.trim(), password:senha});
+  if(error){ showToast('Login inválido: '+error.message); return false; }
+  gestorUnlocked = !!(data && data.session);
+  if(gestorUnlocked){ showToast('Área do gestor desbloqueada.'); await loadDiasEscalaPresenca(); }
+  else showToast('Não foi possível entrar.');
+  return gestorUnlocked;
 }
-function lockGestor(){ gestorUnlocked=false; showToast('Área do gestor bloqueada.'); }
+async function lockGestor(){
+  await sb.auth.signOut();
+  gestorUnlocked=false;
+  participacoesNovas=[]; escalaDias=[]; presencasNovas=[];
+  showToast('Área do gestor bloqueada.');
+}
 function lockScreenHtml(msg){
   return `<div class="empty"><b>Área restrita ao gestor</b>${msg||'Esses dados só ficam visíveis para quem tem a senha do gestor.'}<div style="margin-top:14px;"><button class="btn btn-amber btn-sm" id="btnUnlockGestor">Desbloquear com a senha do gestor</button></div></div>`;
 }
@@ -434,7 +496,7 @@ function renderPublic(alreadySent){
   }
 
   if(alreadySent){
-    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Interesse registrado</div><div class="ev-meta" style="margin-bottom:0;">O supervisor de <b>${escapeHtml(ev.evento)}</b> vai avaliar sua convocação.</div></div></div></div>`;
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Participação confirmada</div><div class="ev-meta" style="margin-bottom:0;">Seus dados foram registrados para <b>${escapeHtml(ev.evento)}</b>. Aguarde as orientações do supervisor.</div></div></div></div>`;
     return;
   }
 
@@ -528,24 +590,42 @@ function renderPublic(alreadySent){
       resultado.innerHTML=`
         <div class="success-box">
           <div class="check">✓</div>
-
           <div class="ev-name">CPF autorizado</div>
-
-          <div class="ev-meta" style="margin-top:10px;">
-            <b>Nome:</b> ${escapeHtml(registro.nome || '')}
+          <div class="ev-meta" style="margin-top:10px;"><b>Função autorizada:</b> ${escapeHtml(registro.funcao || '')}</div>
+          <div class="field" style="margin-top:16px; text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nome completo</label>
+            <input type="text" id="intNome" value="${escapeHtml(registro.nome||'')}" placeholder="Seu nome completo">
           </div>
-
-          <div class="ev-meta" style="margin-top:6px;">
-            <b>Função autorizada:</b> ${escapeHtml(registro.funcao || '')}
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Celular/WhatsApp (obrigatório a cada evento)</label>
+            <input type="text" id="intTelefone" placeholder="(00) 00000-0000">
           </div>
-
-          <div style="margin-top:14px;font-size:12px;color:var(--muted);">
-            Seus dados foram autorizados para este evento.
-          </div>
+          <button class="btn btn-amber" id="btnConfirmarParticipacao" style="width:100%;padding:12px;margin-top:10px;">Confirmar participação</button>
+          <div id="erroParticipacao" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
         </div>
       `;
 
       btn.style.display='none';
+
+      document.getElementById('btnConfirmarParticipacao').onclick=async ()=>{
+        const nome=document.getElementById('intNome').value.trim();
+        const telefone=document.getElementById('intTelefone').value.trim();
+        const erroBox=document.getElementById('erroParticipacao');
+        const btnConfirmar=document.getElementById('btnConfirmarParticipacao');
+        if(!telefone){ erroBox.textContent='Informe seu celular/WhatsApp.'; return; }
+        btnConfirmar.disabled=true; btnConfirmar.textContent='Enviando...';
+        try{
+          const {data:pdata,error:perror}=await sb.rpc('registrar_participacao',{
+            p_evento_id: ev.id, p_cpf: cpfLimpo, p_nome: nome, p_telefone: telefone
+          });
+          if(perror) throw perror;
+          renderPublic(true);
+        }catch(err){
+          console.error(err);
+          erroBox.textContent = err.message || 'Não foi possível confirmar sua participação. Tente novamente.';
+          btnConfirmar.disabled=false; btnConfirmar.textContent='Confirmar participação';
+        }
+      };
 
     }catch(error){
 
@@ -621,6 +701,9 @@ function navItems(){
         <div class="nav-item ${section==='evento'&&subTab==='presenca'?'active':''}" data-nav="evento" data-sub="presenca"><span class="ic">•</span> Controle de Presença</div>
         <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
         <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
+        <div class="nav-item ${section==='evento'&&subTab==='escalaDias'?'active':''}" data-nav="evento" data-sub="escalaDias"><span class="ic">•</span> Escala &amp; Horário por Dia</div>
+        <div class="nav-item ${section==='evento'&&subTab==='checkoutDias'?'active':''}" data-nav="evento" data-sub="checkoutDias"><span class="ic">•</span> Checkout por Dia</div>
+        <div class="nav-item ${section==='evento'&&subTab==='fechamentoNovo'?'active':''}" data-nav="evento" data-sub="fechamentoNovo"><span class="ic">•</span> Fechamento Financeiro</div>
       </div>` : ''}
       <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
       <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
@@ -664,7 +747,7 @@ function attachSidebarHandlers(){
   document.getElementById('overlay').onclick=closeMobileMenu;
   const gestorToggle=document.getElementById('navGestorToggle');
   if(gestorToggle) gestorToggle.onclick=async ()=>{
-    if(gestorUnlocked){ lockGestor(); renderShell(); }
+    if(gestorUnlocked){ await lockGestor(); renderShell(); }
     else { if(await tryUnlockGestor()) renderShell(); }
   };
 }
@@ -904,6 +987,7 @@ async function openEvent(id){
   currentEventId=id;
   await loadStaffForCurrent();
   await loadInteressadosForCurrent();
+  await loadDiasEscalaPresenca();
   section='evento'; subTab='preescala';
   renderShell();
 }
@@ -1020,12 +1104,15 @@ function renderEventoDetail(main){
       <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
       <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
       <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
+      <div class="subtab ${subTab==='escalaDias'?'active':''}" data-sub="escalaDias">Escala &amp; Horário por Dia</div>
+      <div class="subtab ${subTab==='checkoutDias'?'active':''}" data-sub="checkoutDias">Checkout por Dia</div>
+      <div class="subtab ${subTab==='fechamentoNovo'?'active':''}" data-sub="fechamentoNovo">Fechamento Financeiro</div>
     </div>
     <div class="panel" id="panelContent"></div>
   `;
   document.getElementById('btnEditEvent').onclick=()=>openEventForm(ev);
   document.getElementById('btnDeleteEvent').onclick=deleteCurrentEvent;
-  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=()=>{ subTab=t.dataset.sub; renderShell(); }; });
+  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo'].includes(subTab)) await loadDiasEscalaPresenca(); renderShell(); }; });
 
   const panel=document.getElementById('panelContent');
   if(subTab==='preescala') panel.innerHTML=renderPreEscala();
@@ -1033,8 +1120,14 @@ function renderEventoDetail(main){
   if(subTab==='presenca') panel.innerHTML=renderPresencaTab();
   if(subTab==='valoresFuncao') panel.innerHTML=renderValoresFuncaoEvento();
   if(subTab==='aprovacao') panel.innerHTML=renderAprovacaoGestor();
+  if(subTab==='escalaDias') panel.innerHTML=renderEscalaHorarioDias();
+  if(subTab==='checkoutDias') panel.innerHTML=renderCheckoutDias();
+  if(subTab==='fechamentoNovo') panel.innerHTML=renderFechamentoNovo();
   attachDetailHandlers();
-  if((subTab==='aprovacao'||subTab==='valoresFuncao') && !gestorUnlocked) attachLockHandler(()=>renderShell());
+  if(subTab==='escalaDias' && gestorUnlocked) attachEscalaHorarioHandlers();
+  if(subTab==='checkoutDias' && gestorUnlocked) attachCheckoutHandlers();
+  if(subTab==='fechamentoNovo' && gestorUnlocked) attachFechamentoHandlers();
+  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); renderShell(); });
 }
 
 function renderPreEscala(){
@@ -1169,6 +1262,192 @@ function renderAprovacaoGestor(){
     </div>
     ` : `<div class="empty"><b>Ainda sem presenças registradas</b>Marque quem compareceu em Controle de Presença para liberar a aprovação.</div>`}
   `;
+}
+
+/* ================= ETAPA 2 — ESCALA/HORÁRIO POR DIA ================= */
+function renderEscalaHorarioDias(){
+  if(!gestorUnlocked) return lockScreenHtml('A escala e o horário por dia só ficam visíveis para o gestor.');
+  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento (data/data fim/horário) para gerar os dias automaticamente.</div>`;
+  if(!participacoesNovas.length) return `<div class="empty"><b>Nenhuma participação confirmada ainda</b>Colaboradores aparecem aqui depois que confirmam sua participação pelo link público (CPF autorizado).</div>`;
+  return `
+    <div class="card-title">Dias do evento</div>
+    <div class="card-sub">Horário de cada dia — clique em "Editar" para ajustar um dia específico.</div>
+    <table>
+      <thead><tr><th>Data</th><th>Início</th><th>Fim</th><th></th></tr></thead>
+      <tbody>
+        ${eventoDias.map(d=>`
+          <tr data-dia-id="${d.id}">
+            <td>${formatDate(d.data)}</td>
+            <td class="mono">${(d.hora_inicio||'').slice(0,5)}</td>
+            <td class="mono">${(d.hora_fim||'').slice(0,5)}</td>
+            <td><button class="btn btn-ghost btn-sm btn-editar-horario-dia">Editar horário</button></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="card-title" style="margin-top:22px;">Escala por dia</div>
+    <div class="card-sub">Marque em quais dias específicos cada colaborador está previsto para trabalhar.</div>
+    <table>
+      <thead><tr><th>Colaborador</th><th>Função</th>${eventoDias.map(d=>`<th>${formatDate(d.data)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${participacoesNovas.map(p=>`
+          <tr data-participacao-id="${p.id||p.participacao_id}">
+            <td>${escapeHtml(p.nome)}</td>
+            <td>${escapeHtml(p.funcao)}</td>
+            ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(p.participacao_id, d.id)?'checked':''}></label></td>`).join('')}
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  `;
+}
+function attachEscalaHorarioHandlers(){
+  document.querySelectorAll('.btn-editar-horario-dia').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const tr=btn.closest('tr'); const diaId=Number(tr.dataset.diaId);
+      const dia=eventoDias.find(d=>d.id===diaId); if(!dia) return;
+      const novoInicio=prompt('Horário de início (HH:MM):', (dia.hora_inicio||'').slice(0,5));
+      if(novoInicio===null) return;
+      const novoFim=prompt('Horário de fim (HH:MM):', (dia.hora_fim||'').slice(0,5));
+      if(novoFim===null) return;
+      const r=await chamarRpcGestor('atualizar_horario_dia',{p_evento_dia_id:diaId, p_hora_inicio:novoInicio, p_hora_fim:novoFim});
+      if(r.ok){ showToast('Horário atualizado.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+  document.querySelectorAll('.chk-escala-dia').forEach(chk=>{
+    chk.onchange=async ()=>{
+      const tr=chk.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId); const diaId=Number(chk.dataset.diaId);
+      const r=await chamarRpcGestor('definir_escala_dia',{p_participacao_id:participacaoId, p_evento_dia_id:diaId, p_escalado:chk.checked});
+      if(r.ok){ showToast('Escala atualizada.'); await loadDiasEscalaPresenca(); }
+      else { chk.checked=!chk.checked; } // reverte visualmente se o banco recusou (ex: conflito, presença já registrada)
+    };
+  });
+}
+
+/* ================= ETAPA 2 — CHECKOUT/PRESENÇA POR DIA ================= */
+function renderCheckoutDias(){
+  if(!gestorUnlocked) return lockScreenHtml('O checkout de entrada/saída só fica visível para o gestor.');
+  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento para gerar os dias.</div>`;
+  const diaId=diaSelecionadoPresenca || eventoDias[0].id;
+  const escaladosNoDia = participacoesNovas.filter(p=>escaladoNoDia(p.participacao_id, diaId));
+  return `
+    <div class="card-title">Checkout por dia</div>
+    <div class="card-sub">Selecione o dia, registre a entrada e a saída (horário real do servidor). Depois da saída, informe se houve hora extra.</div>
+    <div class="field" style="max-width:280px;">
+      <label>Dia</label>
+      <select id="selDiaPresenca">
+        ${eventoDias.map(d=>`<option value="${d.id}" ${d.id===diaId?'selected':''}>${formatDate(d.data)} (${(d.hora_inicio||'').slice(0,5)}–${(d.hora_fim||'').slice(0,5)})</option>`).join('')}
+      </select>
+    </div>
+    ${escaladosNoDia.length ? `
+    <table style="margin-top:14px;">
+      <thead><tr><th>Colaborador</th><th>Função</th><th>Entrada</th><th>Saída</th><th>Horas extras</th><th></th></tr></thead>
+      <tbody>
+        ${escaladosNoDia.map(p=>{
+          const pr=presencaDoDia(p.participacao_id, diaId);
+          const temEntrada=pr && pr.entrada_ts;
+          const temSaida=pr && pr.saida_ts;
+          return `<tr data-participacao-id="${p.participacao_id}">
+            <td>${escapeHtml(p.nome)}</td>
+            <td>${escapeHtml(p.funcao)}</td>
+            <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+            <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+            <td class="mono">${pr && pr.horas_extra!=null ? pr.horas_extra+'h' : (temSaida?'não informado':'—')}</td>
+            <td>
+              ${!temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
+              ${temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
+              ${temSaida && (pr.horas_extra==null) ? `<button class="btn btn-ghost btn-sm btn-hora-extra">Informar hora extra</button>` : ''}
+              ${temSaida && (pr.horas_extra!=null) ? `<button class="btn btn-ghost btn-sm btn-hora-extra">Corrigir hora extra</button>` : ''}
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>` : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`}
+  `;
+}
+function attachCheckoutHandlers(){
+  const sel=document.getElementById('selDiaPresenca');
+  if(sel) sel.onchange=()=>{ diaSelecionadoPresenca=Number(sel.value); renderShell(); };
+  document.querySelectorAll('.btn-entrada').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const r=await chamarRpcGestor('registrar_entrada_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
+      if(r.ok){ showToast('Entrada registrada.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+  document.querySelectorAll('.btn-saida').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const r=await chamarRpcGestor('registrar_saida_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
+      if(!r.ok) return;
+      showToast('Saída registrada.');
+      const fezExtra=confirm('Este colaborador fez hora extra?');
+      let horas=0;
+      if(fezExtra){
+        let resp=prompt('Quantas horas extras? (somente número inteiro)');
+        while(resp!==null && (isNaN(parseInt(resp,10)) || parseInt(resp,10)<0 || String(parseInt(resp,10))!==resp.trim())){
+          resp=prompt('Valor inválido. Informe um número inteiro maior ou igual a zero (ex: 1, 2, 3):');
+        }
+        horas = resp!==null ? parseInt(resp,10) : 0;
+      }
+      const r2=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:horas});
+      if(r2.ok) showToast(horas>0?`${horas} hora(s) extra registrada(s).`:'Sem hora extra registrada.');
+      await loadDiasEscalaPresenca(); renderShell();
+    };
+  });
+  document.querySelectorAll('.btn-hora-extra').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      let resp=prompt('Quantas horas extras? (somente número inteiro; 0 = não fez)');
+      if(resp===null) return;
+      while(isNaN(parseInt(resp,10)) || parseInt(resp,10)<0 || String(parseInt(resp,10))!==resp.trim()){
+        resp=prompt('Valor inválido. Informe um número inteiro maior ou igual a zero (ex: 0, 1, 2, 3):');
+        if(resp===null) return;
+      }
+      const r=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:parseInt(resp,10)});
+      if(r.ok){ showToast('Hora extra atualizada.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+}
+
+/* ================= ETAPA 2 — FECHAMENTO FINANCEIRO ================= */
+function renderFechamentoNovo(){
+  if(!gestorUnlocked) return lockScreenHtml('O fechamento financeiro só fica visível para o gestor.');
+  if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem colaboradores com dias trabalhados</b>O fechamento só mostra quem já teve entrada e saída registradas.</div>`;
+  return `
+    <div class="card-title">Fechamento financeiro (novo modelo)</div>
+    <div class="card-sub">Valores calculados a partir de dias trabalhados, horas extras (R$10,00/h) e desconto manual. Horas trabalhadas são apenas informativas.</div>
+    <table>
+      <thead><tr><th>Colaborador</th><th>Função</th><th>Dias escalados</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Horas extras</th><th>Valor base</th><th>Excedente</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
+      <tbody>
+        ${fechamentoDados.map(f=>{
+          const horas=Math.floor((f.horas_trabalhadas_minutos||0)/60), mins=(f.horas_trabalhadas_minutos||0)%60;
+          return `<tr data-participacao-id="${f.participacao_id}">
+            <td>${escapeHtml(f.nome)}</td>
+            <td>${escapeHtml(f.funcao)}</td>
+            <td class="mono">${f.dias_escalados}</td>
+            <td class="mono">${f.dias_trabalhados}</td>
+            <td class="mono">${horas}h${String(mins).padStart(2,'0')}</td>
+            <td class="mono">${f.horas_extras}</td>
+            <td class="mono">${f.valor_diaria!=null?brl(f.valor_base):'sem valor cadastrado'}</td>
+            <td class="mono">${brl(f.valor_excedente)}</td>
+            <td class="mono"><input type="number" class="f-desconto" min="0" step="0.01" value="${f.desconto}" style="width:90px;"></td>
+            <td class="mono" style="${f.total_receber<0?'color:var(--red);':''}">${brl(f.total_receber)}</td>
+            <td><button class="btn btn-amber btn-sm btn-recalcular">Recalcular</button></td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+function attachFechamentoHandlers(){
+  document.querySelectorAll('.btn-recalcular').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const novoDesconto=parseFloat(tr.querySelector('.f-desconto').value);
+      if(isNaN(novoDesconto) || novoDesconto<0){ showToast('Desconto inválido.'); return; }
+      const r=await chamarRpcGestor('atualizar_desconto_participacao',{p_participacao_id:participacaoId, p_desconto:novoDesconto});
+      if(r.ok){ showToast('Fechamento recalculado.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
 }
 
 /* ================= PAGAMENTOS ================= */
@@ -1315,7 +1594,7 @@ async function renderRelatorios(main){
   `;
   document.getElementById('relMonth').onchange=(e)=>{ dashMonth=e.target.value; renderRelatorios(main); };
   main.querySelectorAll('.btn-abrir-rel').forEach(btn=>{
-    btn.onclick=async ()=>{ currentEventId=btn.dataset.id; await loadStaffForCurrent(); await loadInteressadosForCurrent(); section='evento'; subTab='aprovacao'; renderShell(); };
+    btn.onclick=async ()=>{ currentEventId=btn.dataset.id; await loadStaffForCurrent(); await loadInteressadosForCurrent(); await loadDiasEscalaPresenca(); section='evento'; subTab='aprovacao'; renderShell(); };
   });
 }
 
