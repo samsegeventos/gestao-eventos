@@ -353,8 +353,7 @@ let escalaDias = [];
 let presencasNovas = [];
 let diaSelecionadoPresenca = null;
 let fechamentoDados = [];
-/* ---- CPFs Autorizados (por evento) ---- */
-let cpfsAutorizadosEventoId = null;
+/* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
 let cpfsAutorizadosBusca = '';
 let subTab = 'preescala';
@@ -700,18 +699,18 @@ function navItems(){
       <div class="nav-item ${section==='eventos'?'active':''}" data-nav="eventos"><span class="ic">📅</span> Eventos</div>
       ${ev ? `
       <div class="nav-sub open">
+        <div class="nav-item ${section==='evento'&&subTab==='cpfsAutorizados'?'active':''}" data-nav="evento" data-sub="cpfsAutorizados"><span class="ic">•</span> CPFs Autorizados</div>
         <div class="nav-item ${section==='evento'&&subTab==='preescala'?'active':''}" data-nav="evento" data-sub="preescala"><span class="ic">•</span> Pré-Escala</div>
         <div class="nav-item ${section==='evento'&&subTab==='escala'?'active':''}" data-nav="evento" data-sub="escala"><span class="ic">•</span> Escala Oficial</div>
-        <div class="nav-item ${section==='evento'&&subTab==='presenca'?'active':''}" data-nav="evento" data-sub="presenca"><span class="ic">•</span> Controle de Presença</div>
-        <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
-        <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
         <div class="nav-item ${section==='evento'&&subTab==='escalaDias'?'active':''}" data-nav="evento" data-sub="escalaDias"><span class="ic">•</span> Escala &amp; Horário por Dia</div>
+        <div class="nav-item ${section==='evento'&&subTab==='presenca'?'active':''}" data-nav="evento" data-sub="presenca"><span class="ic">•</span> Controle de Presença</div>
         <div class="nav-item ${section==='evento'&&subTab==='checkoutDias'?'active':''}" data-nav="evento" data-sub="checkoutDias"><span class="ic">•</span> Checkout por Dia</div>
+        <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
         <div class="nav-item ${section==='evento'&&subTab==='fechamentoNovo'?'active':''}" data-nav="evento" data-sub="fechamentoNovo"><span class="ic">•</span> Fechamento Financeiro</div>
+        <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
       </div>` : ''}
       <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
       <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
-      <div class="nav-item ${section==='cpfsAutorizados'?'active':''}" data-nav="cpfsAutorizados"><span class="ic">🪪</span> CPFs Autorizados</div>
     </div>
     <div class="nav-group" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
       <div class="nav-item" id="navGestorToggle"><span class="ic">${gestorUnlocked?'🔓':'🔒'}</span> ${gestorUnlocked?'Bloquear valores':'Modo Gestor'}</div>
@@ -769,7 +768,6 @@ async function renderMain(){
   if(section==='evento') return renderEventoDetail(main);
   if(section==='pagamentos') return renderPagamentos(main);
   if(section==='relatorios') return renderRelatorios(main);
-  if(section==='cpfsAutorizados') return renderCpfsAutorizados(main);
 }
 
 /* ================= DASHBOARD ================= */
@@ -994,7 +992,8 @@ async function openEvent(id){
   await loadStaffForCurrent();
   await loadInteressadosForCurrent();
   await loadDiasEscalaPresenca();
-  section='evento'; subTab='preescala';
+  await loadCpfsAutorizadosEvento();
+  section='evento'; subTab='cpfsAutorizados';
   renderShell();
 }
 
@@ -1105,22 +1104,24 @@ function renderEventoDetail(main){
       <button class="btn btn-danger btn-sm" id="btnDeleteEvent">Excluir</button>
     </div>
     <div class="subtabs">
+      <div class="subtab ${subTab==='cpfsAutorizados'?'active':''}" data-sub="cpfsAutorizados">CPFs Autorizados</div>
       <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.filter(p=>(p.status||'pendente')==='pendente').length}</span></div>
       <div class="subtab ${subTab==='escala'?'active':''}" data-sub="escala">Escala Oficial<span class="count">${staff.filter(s=>s.escalado).length}</span></div>
-      <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
-      <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
-      <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
       <div class="subtab ${subTab==='escalaDias'?'active':''}" data-sub="escalaDias">Escala &amp; Horário por Dia</div>
+      <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
       <div class="subtab ${subTab==='checkoutDias'?'active':''}" data-sub="checkoutDias">Checkout por Dia</div>
+      <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
       <div class="subtab ${subTab==='fechamentoNovo'?'active':''}" data-sub="fechamentoNovo">Fechamento Financeiro</div>
+      <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
     </div>
     <div class="panel" id="panelContent"></div>
   `;
   document.getElementById('btnEditEvent').onclick=()=>openEventForm(ev);
   document.getElementById('btnDeleteEvent').onclick=deleteCurrentEvent;
-  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo'].includes(subTab)) await loadDiasEscalaPresenca(); renderShell(); }; });
+  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo'].includes(subTab)) await loadDiasEscalaPresenca(); if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento(); renderShell(); }; });
 
   const panel=document.getElementById('panelContent');
+  if(subTab==='cpfsAutorizados') panel.innerHTML=renderCpfsAutorizadosTab();
   if(subTab==='preescala') panel.innerHTML=renderPreEscala();
   if(subTab==='escala') panel.innerHTML=renderEscalaOficial();
   if(subTab==='presenca') panel.innerHTML=renderPresencaTab();
@@ -1130,10 +1131,11 @@ function renderEventoDetail(main){
   if(subTab==='checkoutDias') panel.innerHTML=renderCheckoutDias();
   if(subTab==='fechamentoNovo') panel.innerHTML=renderFechamentoNovo();
   attachDetailHandlers();
+  if(subTab==='cpfsAutorizados' && gestorUnlocked) attachCpfsAutorizadosHandlers();
   if(subTab==='escalaDias' && gestorUnlocked) attachEscalaHorarioHandlers();
   if(subTab==='checkoutDias' && gestorUnlocked) attachCheckoutHandlers();
   if(subTab==='fechamentoNovo' && gestorUnlocked) attachFechamentoHandlers();
-  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); renderShell(); });
+  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo'||subTab==='cpfsAutorizados') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); await loadCpfsAutorizadosEvento(); renderShell(); });
 }
 
 function renderPreEscala(){
@@ -1456,48 +1458,37 @@ function attachFechamentoHandlers(){
   });
 }
 
-/* ================= CPFs AUTORIZADOS (por evento) ================= */
+/* ================= CPFs AUTORIZADOS (dentro do detalhe do evento) ================= */
+function formatCpf(v){
+  const d=(v||'').replace(/\D/g,'').slice(0,11);
+  if(d.length>9) return d.replace(/(\d{3})(\d{3})(\d{3})(\d{1,2})/,'$1.$2.$3-$4');
+  if(d.length>6) return d.replace(/(\d{3})(\d{3})(\d{1,3})/,'$1.$2.$3');
+  if(d.length>3) return d.replace(/(\d{3})(\d{1,3})/,'$1.$2');
+  return d;
+}
+function maskCpfInput(el){ el.value=formatCpf(el.value); }
 async function loadCpfsAutorizadosEvento(){
-  if(!cpfsAutorizadosEventoId){ cpfsAutorizadosLista=[]; return; }
-  const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:cpfsAutorizadosEventoId});
-  if(error){ console.error(error); showToast('Erro ao carregar autorizações.'); cpfsAutorizadosLista=[]; return; }
+  if(!currentEventId){ cpfsAutorizadosLista=[]; return; }
+  const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:currentEventId});
+  if(error){ console.error(error); cpfsAutorizadosLista=[]; return; }
   cpfsAutorizadosLista=data||[];
 }
-async function renderCpfsAutorizados(main){
-  if(!gestorUnlocked){
-    main.innerHTML=`<div class="page-head"><div><h2>CPFs Autorizados</h2><div class="sub">Quem pode confirmar participação em cada evento</div></div></div>${lockScreenHtml('A gestão de autorizações só fica visível para o gestor.')}`;
-    attachLockHandler(()=>renderMain());
-    return;
-  }
-  main.innerHTML=`
-    <div class="page-head"><div><h2>CPFs Autorizados</h2><div class="sub">Selecione o evento para autorizar/desautorizar CPFs — a autorização pertence ao evento, não é global.</div></div></div>
-    <div class="field" style="max-width:380px;">
-      <label>Evento</label>
-      <select id="selEventoCpfs">
-        <option value="">Selecione um evento...</option>
-        ${events.map(e=>`<option value="${e.id}" ${e.id===cpfsAutorizadosEventoId?'selected':''}>${escapeHtml(e.evento)} — ${formatPeriodo(e)}</option>`).join('')}
-      </select>
-    </div>
-    <div id="cpfsAutorizadosPanel" style="margin-top:16px;"></div>
-  `;
-  document.getElementById('selEventoCpfs').onchange=async (e)=>{
-    cpfsAutorizadosEventoId=e.target.value||null;
-    cpfsAutorizadosBusca='';
-    await loadCpfsAutorizadosEvento();
-    renderMain();
-  };
-  if(cpfsAutorizadosEventoId){
-    document.getElementById('cpfsAutorizadosPanel').innerHTML=renderCpfsAutorizadosPanel();
-    attachCpfsAutorizadosHandlers();
-  }
-}
-function renderCpfsAutorizadosPanel(){
-  const busca=cpfsAutorizadosBusca.trim().toLowerCase();
-  const lista=cpfsAutorizadosLista.filter(c=>!busca || (c.cpf||'').includes(busca) || (c.nome||'').toLowerCase().includes(busca));
+function renderCpfsAutorizadosTab(){
+  if(!gestorUnlocked) return lockScreenHtml('A gestão de CPFs autorizados só fica visível para o gestor.');
+  const buscaDigits=cpfsAutorizadosBusca.replace(/\D/g,'');
+  const buscaTexto=cpfsAutorizadosBusca.trim().toLowerCase();
+  const lista=cpfsAutorizadosLista.filter(c=>{
+    if(!cpfsAutorizadosBusca.trim()) return true;
+    const matchCpf = buscaDigits && (c.cpf||'').includes(buscaDigits);
+    const matchNome = (c.nome||'').toLowerCase().includes(buscaTexto);
+    return matchCpf || matchNome;
+  });
   return `
+    <div class="card-title">CPFs autorizados neste evento</div>
+    <div class="card-sub">A autorização pertence sempre a este evento (CPF + evento + função) — o mesmo CPF pode estar autorizado aqui e não autorizado em outro evento.</div>
     <div class="add-row">
       <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
-      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00"></div>
+      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
       <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
       <div class="field"><label>Função</label><input type="text" id="novaFuncaoAut" placeholder="Ex: Vigilante"></div>
       <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
@@ -1508,7 +1499,7 @@ function renderCpfsAutorizadosPanel(){
       <tbody>
         ${lista.map(c=>`
           <tr data-cpf="${c.cpf}">
-            <td class="mono">${escapeHtml(c.cpf)}</td>
+            <td class="mono">${formatCpf(c.cpf)}</td>
             <td>${escapeHtml(c.nome||'—')}</td>
             <td>${escapeHtml(c.funcao||'—')}</td>
             <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
@@ -1520,15 +1511,17 @@ function renderCpfsAutorizadosPanel(){
             </td>
           </tr>`).join('')}
       </tbody>
-    </table>` : `<div class="empty"><b>${busca?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${busca?'':'Use o formulário acima para autorizar o primeiro.'}</div>`}
+    </table>` : `<div class="empty"><b>${cpfsAutorizadosBusca.trim()?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${cpfsAutorizadosBusca.trim()?'':'Use o formulário acima para autorizar o primeiro.'}</div>`}
   `;
 }
 function attachCpfsAutorizadosHandlers(){
+  const cpfInp=document.getElementById('novoCpfAut');
+  if(cpfInp) cpfInp.oninput=(e)=>maskCpfInput(e.target);
   const buscaInp=document.getElementById('buscaCpfAutorizado');
   if(buscaInp) buscaInp.oninput=(e)=>{
     cpfsAutorizadosBusca=e.target.value;
-    const painel=document.getElementById('cpfsAutorizadosPanel');
-    painel.innerHTML=renderCpfsAutorizadosPanel();
+    const painel=document.getElementById('panelContent');
+    painel.innerHTML=renderCpfsAutorizadosTab();
     attachCpfsAutorizadosHandlers();
   };
   const btnAdd=document.getElementById('btnAddCpfAut');
@@ -1538,8 +1531,8 @@ function attachCpfsAutorizadosHandlers(){
     const funcao=document.getElementById('novaFuncaoAut').value.trim();
     if(!cpf){ showToast('Informe o CPF.'); return; }
     if(!funcao){ showToast('Informe a função.'); return; }
-    const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
-    if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+    const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
+    if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
   };
   document.querySelectorAll('.btn-editar-cpf-aut').forEach(btn=>{
     btn.onclick=async ()=>{
@@ -1550,23 +1543,23 @@ function attachCpfsAutorizadosHandlers(){
       const novaFuncao=prompt('Função:', atual.funcao||'');
       if(novaFuncao===null) return;
       if(!novaFuncao.trim()){ showToast('Função é obrigatória.'); return; }
-      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:novoNome, p_funcao:novaFuncao});
-      if(r.ok){ showToast('Autorização atualizada.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:novoNome, p_funcao:novaFuncao});
+      if(r.ok){ showToast('Autorização atualizada.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-desautorizar').forEach(btn=>{
     btn.onclick=async ()=>{
       const cpf=btn.closest('tr').dataset.cpf;
-      if(!confirm(`Desautorizar o CPF ${cpf} neste evento? Ele não conseguirá mais confirmar participação, a menos que seja reativado depois.`)) return;
-      const r=await chamarRpcGestor('desautorizar_cpf_evento',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf});
-      if(r.ok){ showToast('CPF desautorizado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+      if(!confirm(`Desautorizar o CPF ${formatCpf(cpf)} neste evento? Ele não conseguirá mais confirmar participação, a menos que seja reativado depois.`)) return;
+      const r=await chamarRpcGestor('desautorizar_cpf_evento',{p_evento_id:currentEventId, p_cpf:cpf});
+      if(r.ok){ showToast('CPF desautorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-reativar').forEach(btn=>{
     btn.onclick=async ()=>{
       const cpf=btn.closest('tr').dataset.cpf;
-      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:cpfsAutorizadosEventoId, p_cpf:cpf, p_nome:null, p_funcao:null});
-      if(r.ok){ showToast('CPF reativado.'); await loadCpfsAutorizadosEvento(); renderMain(); }
+      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:null, p_funcao:null});
+      if(r.ok){ showToast('CPF reativado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
 }
