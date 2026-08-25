@@ -399,8 +399,18 @@ async function loadAll(){
   events = (await sGet('events')) || [];
   events.forEach(e=>{
     if(!e.status) e.status='aberto';
-    if(!e.dataFim) e.dataFim = e.data;
-    if(!e.linkValidoAte) e.linkValidoAte = e.dataFim;
+    /* PROPOSITALMENTE não preenchemos mais "if(!e.dataFim) e.dataFim=e.data"
+       aqui. Essa linha mascarava qualquer perda real de dataFim vinda do
+       banco, fazendo um evento de vários dias aparecer silenciosamente
+       como se fosse de 1 dia só, sem nenhum aviso — e não havia como
+       distinguir "eventos antigos sem esse campo" de uma perda real.
+       Todo evento salvo por openEventForm() já grava dataFim de forma
+       explícita (inclusive igual a "data" quando é mesmo de 1 dia só),
+       então esse preenchimento automático nunca deveria ser necessário
+       no fluxo atual. formatPeriodo() e openEventForm() já tratam
+       dataFim ausente sem quebrar, então não há risco em deixar de
+       preencher aqui. */
+    if(!e.linkValidoAte) e.linkValidoAte = e.dataFim || e.data;
     if(!e.valoresFuncao) e.valoresFuncao = [];
   });
   clients = (await sGet('clients')) || [];
