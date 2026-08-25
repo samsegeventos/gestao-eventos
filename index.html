@@ -263,12 +263,12 @@ async function sSet(key,value){
       const del = idsQuoted.length ? sb.from('eventos').delete().not('id','in',`(${idsQuoted.join(',')})`) : sb.from('eventos').delete().neq('id','__none__');
       const {error:delErr}=await del;
       if(delErr) throw delErr;
-      return true;
+      return {ok:true};
     }
     if(key==='clients'||key==='gestorPin'){
       const {error}=await sb.from('app_kv').upsert({key,value});
       if(error) throw error;
-      return true;
+      return {ok:true};
     }
     if(key.startsWith('staff:')){
       const id=key.slice(6);
@@ -277,7 +277,7 @@ async function sSet(key,value){
       dados.staff=value;
       const {error}=await sb.from('eventos').upsert({id,dados});
       if(error) throw error;
-      return true;
+      return {ok:true};
     }
     if(key.startsWith('interessados:')){
       const id=key.slice(13);
@@ -288,10 +288,18 @@ async function sSet(key,value){
         const {error}=await sb.from('interessados').insert(rows);
         if(error) throw error;
       }
-      return true;
+      return {ok:true};
     }
-    return false;
-  }catch(e){ console.error(e); showToast('Falha ao salvar. Tente novamente.'); return false; }
+    return {ok:false, error:{message:'Chave de armazenamento desconhecida: '+key}};
+  }catch(e){
+    console.error(e);
+    /* Mantido: aviso genérico para quem ainda não trata o retorno
+       (comportamento inalterado nas demais telas). Além disso, agora
+       o erro real é devolvido no objeto de retorno, para quem quiser
+       mostrá-lo (usado por saveEvents()/openEventForm agora). */
+    showToast('Falha ao salvar. Tente novamente.');
+    return {ok:false, error:e};
+  }
 }
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2600); }
@@ -420,7 +428,7 @@ async function loadAll(){
 }
 async function loadStaffForCurrent(){ staff = currentEventId ? ((await sGet('staff:'+currentEventId))||[]) : []; }
 async function loadInteressadosForCurrent(){ interessados = currentEventId ? ((await sGet('interessados:'+currentEventId))||[]) : []; }
-async function saveEvents(){ await sSet('events', events); }
+async function saveEvents(){ return await sSet('events', events); }
 async function saveClients(){ await sSet('clients', clients); }
 async function saveStaff(){ await sSet('staff:'+currentEventId, staff); }
 async function saveInteressados(){ await sSet('interessados:'+currentEventId, interessados); }
@@ -1184,20 +1192,39 @@ if(linkValidoAte===undefined) return;
     });
   }
 
-  await saveEvents();
-  renderMain();
-  showToast('Evento salvo. Use "Pré-Escala" para começar a escalar a equipe.');
+  const resultado = await saveEvents();
+  if(resultado && resultado.ok){
+    renderMain();
+    showToast('Evento atualizado com sucesso.');
+  } else {
+    /* Não persistiu: recarrega os eventos direto do Supabase para a
+       tela não continuar mostrando uma data que na verdade não foi
+       salva (o array local já tinha sido alterado antes da tentativa
+       de salvar). Mostra o erro real, sem escondê-lo. */
+    events = (await sGet('events')) || events;
+    renderMain();
+    const msg = (resultado && resultado.error && resultado.error.message) ? resultado.error.message : 'não foi possível salvar. Tente novamente.';
+    showToast('Erro ao salvar evento: '+msg);
+  }
 })();
     }
    
 async function deleteCurrentEvent(){
   const ev=currentEvent(); if(!ev) return;
   if(!confirm(`Excluir o evento "${ev.evento}" (${ev.cliente})? Isso também apaga a escala e presença registradas.`)) return;
+  const eventosAntes=events;
   events=events.filter(e=>e.id!==currentEventId);
-  await saveEvents();
-  currentEventId=null; section='eventos';
-  renderShell();
-  showToast('Evento excluído.');
+  const resultado=await saveEvents();
+  if(resultado && resultado.ok){
+    currentEventId=null; section='eventos';
+    renderShell();
+    showToast('Evento excluído.');
+  } else {
+    events=eventosAntes; // reverte a exclusão local, já que não foi persistida
+    renderShell();
+    const msg=(resultado && resultado.error && resultado.error.message) ? resultado.error.message : 'não foi possível excluir. Tente novamente.';
+    showToast('Erro ao excluir evento: '+msg);
+  }
 }
 
 /* ================= EVENTO DETAIL ================= */
