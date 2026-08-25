@@ -367,10 +367,19 @@ const paramEvento = params.get('evento');
 const paramModo = params.get('modo');
 
 /* ================= LOAD ================= */
+function isPublicMode(){ return (paramModo==='interesse' || paramModo==='status') && !!paramEvento; }
 async function loadAll(){
   const {data:{session}} = await sb.auth.getSession();
   gestorUnlocked = !!session;
-  sb.auth.onAuthStateChange((_evt, sess)=>{ gestorUnlocked = !!sess; });
+  /* Reage a login/logout só quando NÃO estamos num modo público — os
+     links de interesse/status são renderizados uma vez e não dependem
+     de sessão, então não devem ser re-renderizados por isso. */
+  sb.auth.onAuthStateChange((_evt, sess)=>{
+    gestorUnlocked = !!sess;
+    if(!isPublicMode()){
+      if(gestorUnlocked) renderShell(); else renderLoginScreen();
+    }
+  });
   events = (await sGet('events')) || [];
   events.forEach(e=>{
     if(!e.status) e.status='aberto';
@@ -380,6 +389,9 @@ async function loadAll(){
   });
   clients = (await sGet('clients')) || [];
 
+  /* Modos públicos são identificados e tratados ANTES de qualquer
+     verificação de sessão — link de interesse e link de status nunca
+     exigem login do funcionário. */
   if(paramModo==='interesse' && paramEvento){
     currentEventId = paramEvento;
     renderPublic();
@@ -388,6 +400,12 @@ async function loadAll(){
   if(paramModo==='status' && paramEvento){
     currentEventId = paramEvento;
     renderPublicStatus();
+    return;
+  }
+
+  /* Fora dos modos públicos, o painel administrativo exige sessão. */
+  if(!gestorUnlocked){
+    renderLoginScreen();
     return;
   }
 
@@ -499,7 +517,7 @@ function renderPublic(alreadySent){
   }
 
   if(alreadySent){
-    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Participação confirmada</div><div class="ev-meta" style="margin-bottom:0;">Seus dados foram registrados para <b>${escapeHtml(ev.evento)}</b>. Aguarde as orientações do supervisor.</div></div></div></div>`;
+    root.innerHTML=`<div class="wrap-narrow"><div class="interesse-page"><div class="success-box"><div class="check">✓</div><div class="ev-name">Seu interesse em participar deste evento foi confirmado!</div><div class="ev-meta" style="margin-bottom:0;">Aguarde a confirmação da organização.</div></div></div></div>`;
     return;
   }
 
@@ -622,6 +640,27 @@ function renderPublic(alreadySent){
             p_evento_id: ev.id, p_cpf: cpfLimpo, p_nome: nome, p_telefone: telefone
           });
           if(perror) throw perror;
+          /* Alimenta a Pré-Escala existente (tabela "interessados"), sem
+             duplicar: só insere se ainda não houver um registro deste
+             CPF neste evento. Inserção direta e pontual (não usa
+             sSet/saveInteressados, que apaga e reinsere TODA a lista do
+             evento — inadequado aqui, pois rodaria sem o restante da
+             lista carregado e apagaria decisões já tomadas pelo gestor). */
+          try{
+            const {data:existente,error:exErr}=await sb.from('interessados')
+              .select('id').eq('evento_id', ev.id).eq('cpf', cpfLimpo).maybeSingle();
+            if(exErr) throw exErr;
+            if(!existente){
+              const {error:insErr}=await sb.from('interessados').insert({
+                evento_id: ev.id, nome, cpf: cpfLimpo, telefone, funcao: registro.funcao||'', status:'pendente'
+              });
+              if(insErr) throw insErr;
+            }
+          }catch(preEscalaErr){
+            /* Não bloqueia a confirmação do funcionário por causa disso;
+               só registra no console para investigação do gestor. */
+            console.error('Falha ao registrar na Pré-Escala:', preEscalaErr);
+          }
           renderPublic(true);
         }catch(err){
           console.error(err);
@@ -689,6 +728,52 @@ function renderPublicStatus(){
   draw();
 }
 
+/* ================= LOGIN (acesso ao painel administrativo) =================
+   Único ponto de entrada do painel quando não há sessão. Não é usado nos
+   modos públicos (?modo=interesse / ?modo=status), que continuam sem login. */
+function renderLoginScreen(){
+  document.querySelector('.mobile-topbar').style.display='none';
+  const root=document.getElementById('shell');
+  root.innerHTML=`
+    <div class="wrap-narrow">
+      <div class="interesse-page">
+        <div class="ev-name">Samseg — Gestão de Eventos</div>
+        <div class="ev-meta">Acesso restrito ao gestor</div>
+        <div class="field" style="text-align:left;">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">E-mail</label>
+          <input type="email" id="loginEmail" placeholder="seuemail@exemplo.com" autocomplete="username">
+        </div>
+        <div class="field" style="text-align:left;">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Senha</label>
+          <input type="password" id="loginSenha" placeholder="Sua senha" autocomplete="current-password">
+        </div>
+        <button class="btn btn-amber" id="btnLoginSubmit" style="width:100%;padding:12px;">Entrar</button>
+        <div id="loginErro" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
+      </div>
+    </div>
+  `;
+  const btn=document.getElementById('btnLoginSubmit');
+  const erro=document.getElementById('loginErro');
+  const submit=async ()=>{
+    const email=document.getElementById('loginEmail').value.trim();
+    const senha=document.getElementById('loginSenha').value;
+    erro.textContent='';
+    if(!email || !senha){ erro.textContent='Informe e-mail e senha.'; return; }
+    btn.disabled=true; btn.textContent='Entrando...';
+    const {data,error}=await sb.auth.signInWithPassword({email,password:senha});
+    if(error){
+      erro.textContent = error.message==='Invalid login credentials' ? 'E-mail ou senha inválidos.' : (error.message||'Não foi possível entrar.');
+      btn.disabled=false; btn.textContent='Entrar';
+      return;
+    }
+    gestorUnlocked = !!(data && data.session);
+    if(gestorUnlocked){ renderShell(); }
+    else { erro.textContent='Não foi possível entrar.'; btn.disabled=false; btn.textContent='Entrar'; }
+  };
+  btn.onclick=submit;
+  document.getElementById('loginSenha').addEventListener('keydown',(e)=>{ if(e.key==='Enter') submit(); });
+}
+
 /* ================= SHELL (sidebar + main) ================= */
 function navItems(){
   const ev = section==='evento' ? currentEvent() : null;
@@ -713,12 +798,16 @@ function navItems(){
       <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
     </div>
     <div class="nav-group" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
-      <div class="nav-item" id="navGestorToggle"><span class="ic">${gestorUnlocked?'🔓':'🔒'}</span> ${gestorUnlocked?'Bloquear valores':'Modo Gestor'}</div>
+      <div class="nav-item" id="navGestorToggle"><span class="ic">🔓</span> Sair</div>
     </div>
   `;
 }
 
 function renderShell(){
+  /* Restaura a mobile-topbar, que renderPublic/renderPublicStatus/
+     renderLoginScreen escondem via style inline. */
+  const topbar=document.querySelector('.mobile-topbar');
+  if(topbar) topbar.style.display='';
   const root=document.getElementById('shell');
   root.innerHTML=`
     <div class="sidebar" id="sidebar">
@@ -751,8 +840,8 @@ function attachSidebarHandlers(){
   document.getElementById('overlay').onclick=closeMobileMenu;
   const gestorToggle=document.getElementById('navGestorToggle');
   if(gestorToggle) gestorToggle.onclick=async ()=>{
-    if(gestorUnlocked){ await lockGestor(); renderShell(); }
-    else { if(await tryUnlockGestor()) renderShell(); }
+    await lockGestor();
+    renderLoginScreen();
   };
 }
 function closeMobileMenu(){
