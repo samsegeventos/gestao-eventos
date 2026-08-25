@@ -823,7 +823,6 @@ function navItems(){
         <div class="nav-item ${section==='evento'&&subTab==='preescala'?'active':''}" data-nav="evento" data-sub="preescala"><span class="ic">•</span> Pré-Escala</div>
         <div class="nav-item ${section==='evento'&&subTab==='escala'?'active':''}" data-nav="evento" data-sub="escala"><span class="ic">•</span> Escala Oficial</div>
         <div class="nav-item ${section==='evento'&&subTab==='escalaDias'?'active':''}" data-nav="evento" data-sub="escalaDias"><span class="ic">•</span> Escala &amp; Horário por Dia</div>
-        <div class="nav-item ${section==='evento'&&subTab==='presenca'?'active':''}" data-nav="evento" data-sub="presenca"><span class="ic">•</span> Controle de Presença</div>
         <div class="nav-item ${section==='evento'&&subTab==='checkoutDias'?'active':''}" data-nav="evento" data-sub="checkoutDias"><span class="ic">•</span> Checkout por Dia</div>
         <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
         <div class="nav-item ${section==='evento'&&subTab==='fechamentoNovo'?'active':''}" data-nav="evento" data-sub="fechamentoNovo"><span class="ic">•</span> Fechamento Financeiro</div>
@@ -1278,7 +1277,6 @@ function renderEventoDetail(main){
       <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.filter(p=>(p.status||'pendente')==='pendente').length}</span></div>
       <div class="subtab ${subTab==='escala'?'active':''}" data-sub="escala">Escala Oficial<span class="count">${staff.filter(s=>s.escalado).length}</span></div>
       <div class="subtab ${subTab==='escalaDias'?'active':''}" data-sub="escalaDias">Escala &amp; Horário por Dia</div>
-      <div class="subtab ${subTab==='presenca'?'active':''}" data-sub="presenca">Controle de Presença</div>
       <div class="subtab ${subTab==='checkoutDias'?'active':''}" data-sub="checkoutDias">Checkout por Dia</div>
       <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
       <div class="subtab ${subTab==='fechamentoNovo'?'active':''}" data-sub="fechamentoNovo">Fechamento Financeiro</div>
@@ -1539,7 +1537,7 @@ function renderCheckoutDias(){
     </div>
     ${escaladosNoDia.length ? `
     <table style="margin-top:14px;">
-      <thead><tr><th>Colaborador</th><th>Função</th><th>Entrada</th><th>Saída</th><th>Horas extras</th><th></th></tr></thead>
+      <thead><tr><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas extras</th><th></th></tr></thead>
       <tbody>
         ${escaladosNoDia.map(p=>{
           const pr=presencaDoDia(pid(p), diaId);
@@ -1548,6 +1546,7 @@ function renderCheckoutDias(){
           return `<tr data-participacao-id="${pid(p)}">
             <td>${escapeHtml(p.nome)}</td>
             <td>${escapeHtml(p.funcao)}</td>
+            <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
             <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
             <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
             <td class="mono">${pr && pr.horas_extra!=null ? pr.horas_extra+'h' : (temSaida?'não informado':'—')}</td>
