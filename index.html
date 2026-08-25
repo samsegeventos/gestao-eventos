@@ -1168,6 +1168,19 @@ if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim.trim())){
   return;
 }
 
+/* Validação de data/hora completas (não só o horário isolado).
+   Monta os dois instantes locais (sem toISOString, para não sofrer
+   deslocamento de fuso) e compara a data+hora inteira: um evento que
+   termina de madrugada no dia seguinte (ex: 20:00 → 04:00 do dia
+   seguinte) é válido; só é inválido quando o fim cai igual ou antes
+   do início na linha do tempo real, dias e horas juntos. */
+const inicioCompleto = new Date(`${dataInicio}T${horaInicio.trim()}:00`);
+const fimCompleto = new Date(`${dataFim}T${horaFim.trim()}:00`);
+if(fimCompleto <= inicioCompleto){
+  showToast('A data/hora de término deve ser depois da data/hora de início.');
+  return;
+}
+
 /* "Válido até" é um campo separado da data do evento (linkValidoAte),
    guardado à parte de data/dataFim — de propósito, para permitir um
    prazo de inscrição diferente da data do evento. Mas se antes ele
