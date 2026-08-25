@@ -207,6 +207,11 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
+/* ================= VERSÃO DO SISTEMA =================
+   Identificação fixa desta entrega — não recalculada pelo navegador.
+   Atualizar este valor a cada nova rodada de alterações entregue. */
+const APP_VERSION = '25/08/2026 15:00';
+
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_xNpRMz2bBwC2ffH50nfPNw_6dV8ZVv4';
@@ -784,6 +789,7 @@ function renderLoginScreen(){
         </div>
         <button class="btn btn-amber" id="btnLoginSubmit" style="width:100%;padding:12px;">Entrar</button>
         <div id="loginErro" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
+        <div style="margin-top:16px;font-size:11px;color:var(--muted);">Versão: ${APP_VERSION}</div>
       </div>
     </div>
   `;
@@ -834,6 +840,7 @@ function navItems(){
     <div class="nav-group" style="border-top:1px solid var(--line); padding-top:10px; margin-top:10px;">
       <div class="nav-item" id="navGestorToggle"><span class="ic">🔓</span> Sair</div>
     </div>
+    <div style="padding:10px 16px; font-size:11px; color:var(--muted);">Gestão de Eventos<br>Versão: ${APP_VERSION}</div>
   `;
 }
 
@@ -1176,7 +1183,7 @@ if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim.trim())){
 const inicioCompleto = new Date(`${dataInicio}T${horaInicio.trim()}:00`);
 const fimCompleto = new Date(`${dataFim}T${horaFim.trim()}:00`);
 if(fimCompleto <= inicioCompleto){
-  showToast('A data/hora de término deve ser depois da data/hora de início.');
+  showToast(`A data/hora de término deve ser depois da data/hora de início. (Início: ${isoToBr(dataInicio)} ${horaInicio.trim()} · Término: ${isoToBr(dataFim)} ${horaFim.trim()})`);
   return;
 }
 
@@ -1553,8 +1560,18 @@ function renderCheckoutDias(){
             <td>
               ${!temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
               ${temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
-              ${temSaida && (pr.horas_extra==null) ? `<button class="btn btn-ghost btn-sm btn-hora-extra">Informar hora extra</button>` : ''}
-              ${temSaida && (pr.horas_extra!=null) ? `<button class="btn btn-ghost btn-sm btn-hora-extra">Corrigir hora extra</button>` : ''}
+              ${temSaida && (pr.horas_extra==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
+                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                  <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
+                  <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
+                  <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
+                </div>` : ''}
+              ${temSaida && (pr.horas_extra==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
+                <div style="display:flex;align-items:center;gap:6px;">
+                  <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
+                  <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
+                </div>` : ''}
+              ${temSaida && (pr.horas_extra!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
             </td>
           </tr>`;
         }).join('')}
@@ -1562,9 +1579,10 @@ function renderCheckoutDias(){
     </table>` : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`}
   `;
 }
+let horasExtraAguardandoQtd = new Set(); // ids (pid) com o campo de quantidade aberto na tela, transitório
 function attachCheckoutHandlers(){
   const sel=document.getElementById('selDiaPresenca');
-  if(sel) sel.onchange=()=>{ diaSelecionadoPresenca=Number(sel.value); renderShell(); };
+  if(sel) sel.onchange=()=>{ diaSelecionadoPresenca=Number(sel.value); horasExtraAguardandoQtd.clear(); renderShell(); };
   document.querySelectorAll('.btn-entrada').forEach(btn=>{
     btn.onclick=async ()=>{
       const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
@@ -1578,31 +1596,49 @@ function attachCheckoutHandlers(){
       const r=await chamarRpcGestor('registrar_saida_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
       if(!r.ok) return;
       showToast('Saída registrada.');
-      const fezExtra=confirm('Este colaborador fez hora extra?');
-      let horas=0;
-      if(fezExtra){
-        let resp=prompt('Quantas horas extras? (somente número inteiro)');
-        while(resp!==null && (isNaN(parseInt(resp,10)) || parseInt(resp,10)<0 || String(parseInt(resp,10))!==resp.trim())){
-          resp=prompt('Valor inválido. Informe um número inteiro maior ou igual a zero (ex: 1, 2, 3):');
-        }
-        horas = resp!==null ? parseInt(resp,10) : 0;
-      }
-      const r2=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:horas});
-      if(r2.ok) showToast(horas>0?`${horas} hora(s) extra registrada(s).`:'Sem hora extra registrada.');
+      /* Não pergunta mais com confirm()/prompt(): depois de recarregar,
+         a própria linha passa a mostrar os botões "Sim"/"Não" (já que
+         temSaida=true e horas_extra ainda é null neste ponto). */
       await loadDiasEscalaPresenca(); renderShell();
     };
   });
-  document.querySelectorAll('.btn-hora-extra').forEach(btn=>{
+  document.querySelectorAll('.btn-hora-extra-nao').forEach(btn=>{
     btn.onclick=async ()=>{
       const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
-      let resp=prompt('Quantas horas extras? (somente número inteiro; 0 = não fez)');
-      if(resp===null) return;
-      while(isNaN(parseInt(resp,10)) || parseInt(resp,10)<0 || String(parseInt(resp,10))!==resp.trim()){
-        resp=prompt('Valor inválido. Informe um número inteiro maior ou igual a zero (ex: 0, 1, 2, 3):');
-        if(resp===null) return;
+      const r=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:0});
+      if(r.ok){ showToast('Sem hora extra registrada.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+  document.querySelectorAll('.btn-hora-extra-sim').forEach(btn=>{
+    btn.onclick=()=>{
+      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      horasExtraAguardandoQtd.add(participacaoId);
+      renderShell();
+    };
+  });
+  document.querySelectorAll('.btn-corrigir-hora-extra').forEach(btn=>{
+    btn.onclick=()=>{
+      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      horasExtraAguardandoQtd.add(participacaoId);
+      renderShell();
+    };
+  });
+  document.querySelectorAll('.btn-confirmar-hora-extra').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const input=tr.querySelector('.input-qtd-hora-extra');
+      const valor=input.value.trim();
+      const horas=parseInt(valor,10);
+      if(valor==='' || isNaN(horas) || horas<0 || String(horas)!==valor){
+        showToast('Informe um número inteiro maior ou igual a zero (ex: 0, 1, 2, 3).');
+        return;
       }
-      const r=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:parseInt(resp,10)});
-      if(r.ok){ showToast('Hora extra atualizada.'); await loadDiasEscalaPresenca(); renderShell(); }
+      const r=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:horas});
+      if(r.ok){
+        horasExtraAguardandoQtd.delete(participacaoId);
+        showToast(horas>0?`${horas} hora(s) extra registrada(s).`:'Sem hora extra registrada.');
+        await loadDiasEscalaPresenca(); renderShell();
+      }
     };
   });
 }
