@@ -298,7 +298,14 @@ function showToast(msg){ const t=document.getElementById('toast'); t.textContent
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 function formatDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function formatPeriodo(e){ if(!e) return '—'; if(e.dataFim && e.dataFim!==e.data) return `${formatDate(e.data)} – ${formatDate(e.dataFim)}`; return formatDate(e.data); }
-function todayISO(){ return new Date().toISOString().slice(0,10); }
+function todayISO(){
+  /* Data local (não UTC) — evita que, à noite no fuso do Brasil,
+     o sistema já considere "hoje" o dia seguinte e expire links
+     um dia antes da hora local. */
+  const d=new Date();
+  const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), day=String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
 function isoToBr(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
 function brToIso(br){
   if(!br) return null;
@@ -1133,9 +1140,23 @@ if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim.trim())){
   return;
 }
 
-const linkDefault = existing ? existing.linkValidoAte : dataFim;
+/* "Válido até" é um campo separado da data do evento (linkValidoAte),
+   guardado à parte de data/dataFim — de propósito, para permitir um
+   prazo de inscrição diferente da data do evento. Mas se antes ele
+   estava simplesmente acompanhando a data de término (não foi
+   customizado à parte), ao editar o evento ele deve continuar
+   acompanhando a NOVA data de término automaticamente — senão o link
+   fica "preso" numa data antiga já vencida mesmo com o evento
+   atualizado, que foi exatamente o problema relatado. */
+const linkEstavaAutomatico = existing ? (existing.linkValidoAte === existing.dataFim) : true;
+const linkDefault = existing
+  ? (linkEstavaAutomatico ? dataFim : existing.linkValidoAte)
+  : dataFim;
 const linkValidoAte = askDate(
-  'Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:',
+  (existing
+    ? `Este é um campo SEPARADO da data do evento. Hoje ele estava ${linkEstavaAutomatico ? 'acompanhando automaticamente a data de término' : 'definido manualmente para ' + formatDate(existing.linkValidoAte)}.\n`
+    : ''
+  ) + 'Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:',
   linkDefault || dataFim
 );
 if(linkValidoAte===undefined) return;
