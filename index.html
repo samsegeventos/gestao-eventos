@@ -363,6 +363,7 @@ let interessados = [];
    staff[] legado. Só populados quando gestorUnlocked (RPCs exigem
    sessão authenticated, exceto evento_dias que tem SELECT aberto). */
 let eventoDias = [];
+let ultimoErroEventoDias = null; // diagnóstico visível: null = consulta OK mas 0 linhas; string = erro real do Supabase
 let participacoesNovas = [];
 let escalaDias = [];
 let presencasNovas = [];
@@ -439,7 +440,8 @@ function currentEvent(){ return events.find(e=>e.id===currentEventId); }
 async function loadDiasEscalaPresenca(){
   if(!currentEventId){ eventoDias=[]; participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
   const {data:dias,error:errDias}=await sb.from('evento_dias').select('*').eq('evento_id',currentEventId).order('data',{ascending:true});
-  if(errDias){ console.error(errDias); }
+  if(errDias) console.error('Erro ao consultar evento_dias:', errDias);
+  ultimoErroEventoDias = errDias ? (errDias.message||'erro desconhecido') : null;
   eventoDias=dias||[];
   if(diaSelecionadoPresenca==null && eventoDias.length) diaSelecionadoPresenca=eventoDias[0].id;
   if(!gestorUnlocked){ participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
@@ -458,12 +460,17 @@ async function loadDiasEscalaPresenca(){
   }
 }
 function escaladoNoDia(participacaoId, eventoDiaId){
-  const r=escalaDias.find(x=>x.participacao_id===participacaoId && x.evento_dia_id===eventoDiaId);
+  const r=escalaDias.find(x=>String(x.participacao_id)===String(participacaoId) && String(x.evento_dia_id)===String(eventoDiaId));
   return !!(r && r.escalado);
 }
 function presencaDoDia(participacaoId, eventoDiaId){
-  return presencasNovas.find(x=>x.participacao_id===participacaoId && x.evento_dia_id===eventoDiaId) || null;
+  return presencasNovas.find(x=>String(x.participacao_id)===String(participacaoId) && String(x.evento_dia_id)===String(eventoDiaId)) || null;
 }
+/* listar_participacoes_evento pode retornar o identificador da
+   participação como "id" ou como "participacao_id" — usar sempre esta
+   função em vez de acessar p.participacao_id direto, para não silenciar
+   a leitura com undefined quando o nome do campo for outro. */
+function pid(p){ return (p.participacao_id!=null) ? p.participacao_id : p.id; }
 async function chamarRpcGestor(nome, params){
   try{
     const {data,error}=await sb.rpc(nome, params);
@@ -634,7 +641,7 @@ function renderPublic(alreadySent){
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Celular/WhatsApp (obrigatório a cada evento)</label>
-            <input type="text" id="intTelefone" placeholder="(00) 00000-0000">
+            <input type="text" id="intTelefone" placeholder="(00) 0 0000-0000" inputmode="numeric" maxlength="16">
           </div>
           <button class="btn btn-amber" id="btnConfirmarParticipacao" style="width:100%;padding:12px;margin-top:10px;">Confirmar participação</button>
           <div id="erroParticipacao" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
@@ -643,16 +650,19 @@ function renderPublic(alreadySent){
 
       btn.style.display='none';
 
+      const intTelefoneEl=document.getElementById('intTelefone');
+      intTelefoneEl.oninput=()=>maskTelefoneInput(intTelefoneEl);
+
       document.getElementById('btnConfirmarParticipacao').onclick=async ()=>{
         const nome=document.getElementById('intNome').value.trim();
-        const telefone=document.getElementById('intTelefone').value.trim();
+        const telefoneDigits=document.getElementById('intTelefone').value.replace(/\D/g,'');
         const erroBox=document.getElementById('erroParticipacao');
         const btnConfirmar=document.getElementById('btnConfirmarParticipacao');
-        if(!telefone){ erroBox.textContent='Informe seu celular/WhatsApp.'; return; }
+        if(telefoneDigits.length!==11){ erroBox.textContent='Informe um telefone celular válido.'; return; }
         btnConfirmar.disabled=true; btnConfirmar.textContent='Enviando...';
         try{
           const {data:pdata,error:perror}=await sb.rpc('registrar_participacao',{
-            p_evento_id: ev.id, p_cpf: cpfLimpo, p_nome: nome, p_telefone: telefone
+            p_evento_id: ev.id, p_cpf: cpfLimpo, p_nome: nome, p_telefone: telefoneDigits
           });
           if(perror) throw perror;
           /* Alimenta a Pré-Escala existente (tabela "interessados"), sem
@@ -667,7 +677,7 @@ function renderPublic(alreadySent){
             if(exErr) throw exErr;
             if(!existente){
               const {error:insErr}=await sb.from('interessados').insert({
-                evento_id: ev.id, nome, cpf: cpfLimpo, telefone, funcao: registro.funcao||'', status:'pendente'
+                evento_id: ev.id, nome, cpf: cpfLimpo, telefone: telefoneDigits, funcao: registro.funcao||'', status:'pendente'
               });
               if(insErr) throw insErr;
             }
@@ -1302,7 +1312,7 @@ function renderPreEscala(){
     </div>
     ${pendentes.length ? pendentes.map(p=>`
       <div class="interesse-row" data-id="${p.id}">
-        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(p.telefone):''}</div></div>
+        <div class="who"><div class="nome">${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
         <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
         <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
       </div>`).join('') : `<div class="empty"><b>Ninguém aguardando avaliação</b>Compartilhe o link acima com a equipe.</div>`}
@@ -1335,13 +1345,14 @@ function renderEscalaOficial(){
     </div>` : ''}
     ${staff.length ? `
     <table>
-      <thead><tr><th>Nome</th><th>Função</th><th>CPF</th><th>Escalado</th><th></th></tr></thead>
+      <thead><tr><th>Nome</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
       <tbody>
         ${staff.map(c=>`
           <tr data-id="${c.id}">
             <td>${escapeHtml(c.nome)}</td>
             <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
             <td class="mono">${escapeHtml(c.cpf||'—')}</td>
+            <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
             <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
             <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
           </tr>`).join('')}
@@ -1412,8 +1423,29 @@ function renderAprovacaoGestor(){
 /* ================= ETAPA 2 — ESCALA/HORÁRIO POR DIA ================= */
 function renderEscalaHorarioDias(){
   if(!gestorUnlocked) return lockScreenHtml('A escala e o horário por dia só ficam visíveis para o gestor.');
-  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento (data/data fim/horário) para gerar os dias automaticamente.</div>`;
+  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento (data/data fim/horário) para gerar os dias automaticamente.<div class="mono" style="margin-top:10px;font-size:11px;color:var(--muted);">Diagnóstico: evento_id consultado = "${escapeHtml(currentEventId||'')}" · ${ultimoErroEventoDias ? 'erro do Supabase: '+escapeHtml(ultimoErroEventoDias) : 'consulta OK, 0 linhas retornadas (possível RLS bloqueando o papel authenticated)'}</div></div>`;
   if(!participacoesNovas.length) return `<div class="empty"><b>Nenhuma participação confirmada ainda</b>Colaboradores aparecem aqui depois que confirmam sua participação pelo link público (CPF autorizado).</div>`;
+
+  /* Regra definitiva: só quem já foi aprovado (Pré-Escala → Escala
+     Oficial) fica disponível para ser escalado por dia — aprovação não
+     escala automaticamente nenhum dia específico, só libera a pessoa
+     para aparecer aqui. Cruza por CPF com "interessados" (já carregado
+     ao abrir o evento). Se o retorno de listar_participacoes_evento não
+     trouxer CPF em nenhum registro (campo ausente), mantém a lista
+     completa em vez de esconder todo mundo por causa de uma coluna que
+     talvez não exista nessa RPC — evita piorar o que já funcionava. */
+  const algumTemCpf = participacoesNovas.some(p=>p.cpf);
+  let listaExibida = participacoesNovas;
+  if(algumTemCpf){
+    const cpfsAprovados = new Set(
+      interessados.filter(i=>(i.status||'pendente')==='aprovado').map(i=>(i.cpf||'').replace(/\D/g,''))
+    );
+    listaExibida = participacoesNovas.filter(p=>cpfsAprovados.has((p.cpf||'').replace(/\D/g,'')));
+  }
+  if(!listaExibida.length){
+    return `<div class="empty"><b>Nenhum colaborador aprovado ainda</b>Aprove candidatos na Pré-Escala (Escala Oficial) para eles ficarem disponíveis aqui.</div>`;
+  }
+
   return `
     <div class="card-title">Dias do evento</div>
     <div class="card-sub">Horário de cada dia — clique em "Editar" para ajustar um dia específico.</div>
@@ -1434,11 +1466,11 @@ function renderEscalaHorarioDias(){
     <table>
       <thead><tr><th>Colaborador</th><th>Função</th>${eventoDias.map(d=>`<th>${formatDate(d.data)}</th>`).join('')}</tr></thead>
       <tbody>
-        ${participacoesNovas.map(p=>`
-          <tr data-participacao-id="${p.id||p.participacao_id}">
+        ${listaExibida.map(p=>`
+          <tr data-participacao-id="${pid(p)}">
             <td>${escapeHtml(p.nome)}</td>
             <td>${escapeHtml(p.funcao)}</td>
-            ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(p.participacao_id, d.id)?'checked':''}></label></td>`).join('')}
+            ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
           </tr>`).join('')}
       </tbody>
     </table>
@@ -1461,7 +1493,7 @@ function attachEscalaHorarioHandlers(){
     chk.onchange=async ()=>{
       const tr=chk.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId); const diaId=Number(chk.dataset.diaId);
       const r=await chamarRpcGestor('definir_escala_dia',{p_participacao_id:participacaoId, p_evento_dia_id:diaId, p_escalado:chk.checked});
-      if(r.ok){ showToast('Escala atualizada.'); await loadDiasEscalaPresenca(); }
+      if(r.ok){ showToast('Escala atualizada.'); await loadDiasEscalaPresenca(); renderShell(); }
       else { chk.checked=!chk.checked; } // reverte visualmente se o banco recusou (ex: conflito, presença já registrada)
     };
   });
@@ -1470,9 +1502,9 @@ function attachEscalaHorarioHandlers(){
 /* ================= ETAPA 2 — CHECKOUT/PRESENÇA POR DIA ================= */
 function renderCheckoutDias(){
   if(!gestorUnlocked) return lockScreenHtml('O checkout de entrada/saída só fica visível para o gestor.');
-  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento para gerar os dias.</div>`;
+  if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento para gerar os dias.<div class="mono" style="margin-top:10px;font-size:11px;color:var(--muted);">Diagnóstico: evento_id consultado = "${escapeHtml(currentEventId||'')}" · ${ultimoErroEventoDias ? 'erro do Supabase: '+escapeHtml(ultimoErroEventoDias) : 'consulta OK, 0 linhas retornadas (possível RLS bloqueando o papel authenticated)'}</div></div>`;
   const diaId=diaSelecionadoPresenca || eventoDias[0].id;
-  const escaladosNoDia = participacoesNovas.filter(p=>escaladoNoDia(p.participacao_id, diaId));
+  const escaladosNoDia = participacoesNovas.filter(p=>escaladoNoDia(pid(p), diaId));
   return `
     <div class="card-title">Checkout por dia</div>
     <div class="card-sub">Selecione o dia, registre a entrada e a saída (horário real do servidor). Depois da saída, informe se houve hora extra.</div>
@@ -1487,10 +1519,10 @@ function renderCheckoutDias(){
       <thead><tr><th>Colaborador</th><th>Função</th><th>Entrada</th><th>Saída</th><th>Horas extras</th><th></th></tr></thead>
       <tbody>
         ${escaladosNoDia.map(p=>{
-          const pr=presencaDoDia(p.participacao_id, diaId);
+          const pr=presencaDoDia(pid(p), diaId);
           const temEntrada=pr && pr.entrada_ts;
           const temSaida=pr && pr.saida_ts;
-          return `<tr data-participacao-id="${p.participacao_id}">
+          return `<tr data-participacao-id="${pid(p)}">
             <td>${escapeHtml(p.nome)}</td>
             <td>${escapeHtml(p.funcao)}</td>
             <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
@@ -1604,6 +1636,18 @@ function formatCpf(v){
   return d;
 }
 function maskCpfInput(el){ el.value=formatCpf(el.value); }
+/* Máscara de celular brasileiro: (DD) 9 NNNN-NNNN, formatada
+   progressivamente enquanto digita/cola/apaga. Armazenamento
+   continua sendo feito só com os dígitos (ver uso em renderPublic). */
+function formatTelefone(v){
+  const d=(v||'').replace(/\D/g,'').slice(0,11);
+  if(d.length===0) return '';
+  if(d.length<=2) return `(${d}`;
+  if(d.length<=3) return `(${d.slice(0,2)}) ${d.slice(2)}`;
+  if(d.length<=7) return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3)}`;
+  return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3,7)}-${d.slice(7)}`;
+}
+function maskTelefoneInput(el){ el.value=formatTelefone(el.value); }
 async function loadCpfsAutorizadosEvento(){
   if(!currentEventId){ cpfsAutorizadosLista=[]; return; }
   const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:currentEventId});
