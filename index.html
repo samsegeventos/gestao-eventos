@@ -210,7 +210,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '25/08/2026 15:00';
+const APP_VERSION = '25/08/2026 16:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -373,6 +373,7 @@ let participacoesNovas = [];
 let escalaDias = [];
 let presencasNovas = [];
 let diaSelecionadoPresenca = null;
+let fechamentoVisao = 'colaborador'; // 'colaborador' ou 'funcao' — só estado de exibição, não afeta os dados
 let fechamentoDados = [];
 /* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
@@ -568,7 +569,7 @@ function renderPublic(alreadySent){
       <div class="interesse-page">
 
         <div class="ev-name">${escapeHtml(ev.evento)}</div>
-        <div class="ev-meta">Data: ${formatDate(ev.data)}</div>
+        <div class="ev-meta">${ev.dataFim && ev.dataFim!==ev.data ? `Data do evento: ${formatDate(ev.data)} a ${formatDate(ev.dataFim)}` : `Data do evento: ${formatDate(ev.data)}`}</div>
 
         <div class="field">
           <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">CPF</label>
@@ -1648,21 +1649,26 @@ function renderFechamentoNovo(){
   if(!gestorUnlocked) return lockScreenHtml('O fechamento financeiro só fica visível para o gestor.');
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem colaboradores com dias trabalhados</b>O fechamento só mostra quem já teve entrada e saída registradas.</div>`;
   return `
-    <div class="card-title">Fechamento financeiro (novo modelo)</div>
-    <div class="card-sub">Valores calculados a partir de dias trabalhados, horas extras (R$10,00/h) e desconto manual. Horas trabalhadas são apenas informativas.</div>
+    <div class="card-title">Fechamento financeiro</div>
+    <div class="card-sub">Valores calculados a partir de dias trabalhados (checkout), horas adicionais (R$10,00/h) e desconto manual. Horas trabalhadas são informativas.</div>
+    <div style="margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm ${fechamentoVisao==='colaborador'?'active':''}" id="btnVisaoColaborador" style="${fechamentoVisao==='colaborador'?'background:var(--accent-soft);':''}">Por colaborador</button>
+      <button class="btn btn-ghost btn-sm ${fechamentoVisao==='funcao'?'active':''}" id="btnVisaoFuncao" style="${fechamentoVisao==='funcao'?'background:var(--accent-soft);':''}">Resumo por função</button>
+    </div>
+    ${fechamentoVisao==='funcao' ? renderResumoPorFuncao() : `
     <table>
-      <thead><tr><th>Colaborador</th><th>Função</th><th>Dias escalados</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Horas extras</th><th>Valor base</th><th>Excedente</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
+      <thead><tr><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Valor/Função</th><th>Valor Total</th><th>Horas adicionais</th><th>Valor adicional</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
       <tbody>
         ${fechamentoDados.map(f=>{
           const horas=Math.floor((f.horas_trabalhadas_minutos||0)/60), mins=(f.horas_trabalhadas_minutos||0)%60;
           return `<tr data-participacao-id="${f.participacao_id}">
             <td>${escapeHtml(f.nome)}</td>
             <td>${escapeHtml(f.funcao)}</td>
-            <td class="mono">${f.dias_escalados}</td>
             <td class="mono">${f.dias_trabalhados}</td>
             <td class="mono">${horas}h${String(mins).padStart(2,'0')}</td>
-            <td class="mono">${f.horas_extras}</td>
-            <td class="mono">${f.valor_diaria!=null?brl(f.valor_base):'sem valor cadastrado'}</td>
+            <td class="mono">${f.valor_diaria!=null?brl(f.valor_diaria):'sem valor cadastrado'}</td>
+            <td class="mono">${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
+            <td class="mono">${f.horas_extras}h</td>
             <td class="mono">${brl(f.valor_excedente)}</td>
             <td class="mono"><input type="number" class="f-desconto" min="0" step="0.01" value="${f.desconto}" style="width:90px;"></td>
             <td class="mono" style="${f.total_receber<0?'color:var(--red);':''}">${brl(f.total_receber)}</td>
@@ -1670,10 +1676,67 @@ function renderFechamentoNovo(){
           </tr>`;
         }).join('')}
       </tbody>
+    </table>`}
+  `;
+}
+function renderResumoPorFuncao(){
+  /* Consolidação por função: soma valores já calculados pela RPC
+     fechamento_evento por colaborador (fechamentoDados) — não recalcula
+     nenhuma regra financeira nova, só agrupa e soma o que já veio pronto. */
+  const porFuncao={};
+  fechamentoDados.forEach(f=>{
+    const k=f.funcao||'—';
+    if(!porFuncao[k]) porFuncao[k]={funcao:k, valorFuncao:f.valor_diaria, colaboradores:0, diasTrabalhados:0, valorTotal:0, valorAdicional:0, desconto:0, total:0};
+    const g=porFuncao[k];
+    g.colaboradores+=1;
+    g.diasTrabalhados+=(f.dias_trabalhados||0);
+    g.valorTotal+=(f.valor_diaria!=null?(f.valor_base||0):0);
+    g.valorAdicional+=(f.valor_excedente||0);
+    g.desconto+=(f.desconto||0);
+    g.total+=(f.total_receber||0);
+  });
+  const linhas=Object.values(porFuncao);
+  if(!linhas.length) return `<div class="empty"><b>Sem dados para resumir</b></div>`;
+  const totais=linhas.reduce((acc,l)=>({
+    colaboradores:acc.colaboradores+l.colaboradores, diasTrabalhados:acc.diasTrabalhados+l.diasTrabalhados,
+    valorTotal:acc.valorTotal+l.valorTotal, valorAdicional:acc.valorAdicional+l.valorAdicional,
+    desconto:acc.desconto+l.desconto, total:acc.total+l.total
+  }),{colaboradores:0,diasTrabalhados:0,valorTotal:0,valorAdicional:0,desconto:0,total:0});
+  return `
+    <table>
+      <thead><tr><th>Função</th><th>Valor/Função</th><th>Colaboradores</th><th>Dias trabalhados</th><th>Valor Total</th><th>Valor adicional</th><th>Descontos</th><th>Total</th></tr></thead>
+      <tbody>
+        ${linhas.map(l=>`
+          <tr>
+            <td>${escapeHtml(l.funcao)}</td>
+            <td class="mono">${l.valorFuncao!=null?brl(l.valorFuncao):'sem valor cadastrado'}</td>
+            <td class="mono">${l.colaboradores}</td>
+            <td class="mono">${l.diasTrabalhados}</td>
+            <td class="mono">${brl(l.valorTotal)}</td>
+            <td class="mono">${brl(l.valorAdicional)}</td>
+            <td class="mono">${brl(l.desconto)}</td>
+            <td class="mono">${brl(l.total)}</td>
+          </tr>`).join('')}
+      </tbody>
+      <tfoot>
+        <tr style="font-weight:700;">
+          <td>Total geral</td><td></td>
+          <td class="mono">${totais.colaboradores}</td>
+          <td class="mono">${totais.diasTrabalhados}</td>
+          <td class="mono">${brl(totais.valorTotal)}</td>
+          <td class="mono">${brl(totais.valorAdicional)}</td>
+          <td class="mono">${brl(totais.desconto)}</td>
+          <td class="mono">${brl(totais.total)}</td>
+        </tr>
+      </tfoot>
     </table>
   `;
 }
 function attachFechamentoHandlers(){
+  const btnCol=document.getElementById('btnVisaoColaborador');
+  const btnFunc=document.getElementById('btnVisaoFuncao');
+  if(btnCol) btnCol.onclick=()=>{ fechamentoVisao='colaborador'; renderShell(); };
+  if(btnFunc) btnFunc.onclick=()=>{ fechamentoVisao='funcao'; renderShell(); };
   document.querySelectorAll('.btn-recalcular').forEach(btn=>{
     btn.onclick=async ()=>{
       const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
