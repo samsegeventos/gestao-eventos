@@ -141,6 +141,14 @@
   tbody td{padding:10px; border-bottom:1px solid var(--line); vertical-align:middle;}
   tbody tr:hover{background:rgba(255,255,255,0.02);}
   tbody tr:last-child td{border-bottom:none;}
+
+  /* ---- Fechamento Financeiro: visão "Por datas" (tela = impressão) ---- */
+  .tabela-fechamento-datas{font-size:12.5px; font-weight:400;}
+  .tabela-fechamento-datas thead th{background:#2a2a2a; color:#fff; font-weight:600; white-space:nowrap;}
+  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:2px solid #333; white-space:nowrap;}
+  .tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #333;}
+  .tabela-fechamento-datas .col-assinatura{min-width:260px;}
+  .folha-fechamento{margin-bottom:32px;}
   td input[type="time"],td input[type="date"],td input[type="number"],td input[type="text"]{width:100%; min-width:90px;}
 
   .stamp{display:inline-flex; align-items:center; gap:6px; padding:4px 10px; border-radius:20px; font-size:11.5px; font-weight:700; letter-spacing:0.5px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
@@ -190,7 +198,12 @@
     table{color:#000;}
     thead th,tbody td{border-color:#ccc;}
     .totals .value{color:#000;}
+    .tabela-fechamento-datas thead th{background:#333 !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #000 !important;}
+    .folha-fechamento{page-break-after:always; margin-bottom:0;}
+    .folha-fechamento:last-child{page-break-after:auto;}
   }
+  @page{ size: A4 landscape; margin: 10mm; }
 </style>
 </head>
 <body>
@@ -210,7 +223,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '25/08/2026 18:00';
+const APP_VERSION = '26/08/2026 09:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1716,8 +1729,9 @@ function renderFechamentoNovo(){
     <div style="margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm ${fechamentoVisao==='colaborador'?'active':''}" id="btnVisaoColaborador" style="${fechamentoVisao==='colaborador'?'background:var(--accent-soft);':''}">Por colaborador</button>
       <button class="btn btn-ghost btn-sm ${fechamentoVisao==='funcao'?'active':''}" id="btnVisaoFuncao" style="${fechamentoVisao==='funcao'?'background:var(--accent-soft);':''}">Resumo por função</button>
+      <button class="btn btn-ghost btn-sm ${fechamentoVisao==='datas'?'active':''}" id="btnVisaoDatas" style="${fechamentoVisao==='datas'?'background:var(--accent-soft);':''}">Por datas (impressão)</button>
     </div>
-    ${fechamentoVisao==='funcao' ? renderResumoPorFuncao() : `
+    ${fechamentoVisao==='funcao' ? renderResumoPorFuncao() : (fechamentoVisao==='datas' ? renderFechamentoPorDatas() : `
     <table>
       <thead><tr><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Valor/Função</th><th>Valor Total</th><th>Horas adicionais</th><th>Valor adicional</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
       <tbody>
@@ -1738,7 +1752,7 @@ function renderFechamentoNovo(){
           </tr>`;
         }).join('')}
       </tbody>
-    </table>`}
+    </table>`)}
   `;
 }
 function renderResumoPorFuncao(){
@@ -1794,11 +1808,81 @@ function renderResumoPorFuncao(){
     </table>
   `;
 }
+const DIAS_SEMANA_ABREV = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+function numeroPlano(v){
+  const n=Number(v)||0;
+  return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.',',');
+}
+function renderFechamentoPorDatas(){
+  /* Visão só de apresentação/impressão — usa exatamente os mesmos
+     dados já carregados (fechamentoDados, presencasNovas, eventoDias),
+     sem recalcular nenhum valor financeiro novo. O valor de cada dia é
+     só o valor/diária da função daquele colaborador (repetido dia a
+     dia em que ele trabalhou, segundo o registro real do Checkout),
+     seguido das horas adicionais daquele dia específico, se houver. */
+  if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
+  const ehVigilante=f=>(f.funcao||'').trim().toLowerCase()==='vigilante';
+  const vigilantes=fechamentoDados.filter(ehVigilante);
+  const demais=fechamentoDados.filter(f=>!ehVigilante(f));
+  const gerarTabela=(lista)=>`
+    <table class="tabela-fechamento-datas">
+      <thead><tr>
+        <th>Colaborador</th>
+        <th>Função / Valor</th>
+        ${eventoDias.map(d=>`<th>${formatDate(d.data)} ${DIAS_SEMANA_ABREV[new Date(d.data+'T00:00:00').getDay()]}</th>`).join('')}
+        <th>Valor Total</th><th>Adic.</th><th>Desc.</th><th>Total</th><th class="col-assinatura">Assinatura</th>
+      </tr></thead>
+      <tbody>
+        ${lista.map(f=>`
+          <tr>
+            <td>${escapeHtml(f.nome)}</td>
+            <td>${escapeHtml(f.funcao)} / ${f.valor_diaria!=null?numeroPlano(f.valor_diaria):'—'}</td>
+            ${eventoDias.map(d=>{
+              const pr=presencaDoDia(f.participacao_id, d.id);
+              if(!pr || !pr.entrada_ts) return `<td></td>`;
+              const he=horasExtraDe(pr);
+              return `<td>${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
+            }).join('')}
+            <td>${brl(f.valor_base)}</td>
+            <td>${brl(f.valor_excedente)}</td>
+            <td>${brl(f.desconto)}</td>
+            <td>${brl(f.total_receber)}</td>
+            <td class="col-assinatura"></td>
+          </tr>`).join('')}
+      </tbody>
+    </table>`;
+  const grupos={};
+  fechamentoDados.forEach(f=>{
+    const k=f.funcao||'—';
+    if(!grupos[k]) grupos[k]={funcao:k, qtd:0, total:0};
+    grupos[k].qtd+=1; grupos[k].total+=(f.total_receber||0);
+  });
+  const linhasResumo=Object.values(grupos);
+  const totalGeral=linhasResumo.reduce((s,g)=>s+g.total,0);
+  const qtdGeral=linhasResumo.reduce((s,g)=>s+g.qtd,0);
+  return `
+    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
+    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">Vigilantes</div>${gerarTabela(vigilantes)}</div>` : ''}
+    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">Demais Funções</div>${gerarTabela(demais)}</div>` : ''}
+    <div class="folha-fechamento">
+      <div class="card-title">Resumo para o Diretor</div>
+      <table class="tabela-fechamento-datas">
+        <thead><tr><th>Função</th><th>Nº de colaboradores</th><th>Total a pagar</th></tr></thead>
+        <tbody>
+          ${linhasResumo.map(g=>`<tr><td>${escapeHtml(g.funcao)}</td><td>${g.qtd}</td><td>${brl(g.total)}</td></tr>`).join('')}
+          <tr><td>TOTAL GERAL</td><td>${qtdGeral}</td><td>${brl(totalGeral)}</td></tr>
+        </tbody>
+      </table>
+    </div>
+  `;
+}
 function attachFechamentoHandlers(){
   const btnCol=document.getElementById('btnVisaoColaborador');
   const btnFunc=document.getElementById('btnVisaoFuncao');
+  const btnDatas=document.getElementById('btnVisaoDatas');
   if(btnCol) btnCol.onclick=()=>{ fechamentoVisao='colaborador'; renderShell(); };
   if(btnFunc) btnFunc.onclick=()=>{ fechamentoVisao='funcao'; renderShell(); };
+  if(btnDatas) btnDatas.onclick=()=>{ fechamentoVisao='datas'; renderShell(); };
   document.querySelectorAll('.btn-recalcular').forEach(btn=>{
     btn.onclick=async ()=>{
       const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
