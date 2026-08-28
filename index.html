@@ -238,7 +238,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 13:20';
+const APP_VERSION = '26/08/2026 14:10';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -395,23 +395,23 @@ function achatarGruposNumerados(grupos){
 function normalizaFuncaoDisplay(f){ return (f||'').trim().toUpperCase().replace(/\s+/g,' '); }
 function renderResumoQuantidadesFuncao(grupos){
   if(!grupos.length) return '';
-  return `<div class="resumo-funcoes"><b>Resumo:</b> ${grupos.map(g=>`${escapeHtml(g.funcao)}: ${g.itens.length}`).join(' &nbsp;|&nbsp; ')}</div>`;
+  const total=grupos.reduce((s,g)=>s+g.itens.length,0);
+  return `<div class="resumo-funcoes"><b>Resumo:</b> ${grupos.map(g=>`${escapeHtml(g.funcao)}: ${g.itens.length}`).join(' &nbsp;|&nbsp; ')} &nbsp;|&nbsp; <b>Total geral: ${total} colaborador${total!==1?'es':''}</b></div>`;
 }
 /* ================= AGRUPAMENTO POR FUNÇÃO PRINCIPAL (só exibição) =================
    "VIGILANTE" e "VIGILANTE LÍDER DE EQUIPE" caem no MESMO bloco visual
    "VIGILANTE" — nunca dois blocos separados. Dentro do bloco: líderes
    primeiro (ordem alfabética entre si), depois os demais colaboradores
    em ordem alfabética. A contagem do bloco inclui líderes. Usado em
-   CPFs Autorizados, Escala Oficial, Checkout por Dia e Fechamento
-   Financeiro. Nada disso altera dado nenhum — só como a mesma lista já
-   carregada é desenhada. */
+   CPFs Autorizados, Pré-Escala, Escala Oficial, Escala & Horário por
+   Dia, Checkout por Dia e Fechamento Financeiro. A ordem dos blocos
+   segue ORDEM_OFICIAL_FUNCOES_BASE (fixa), não a ordem cadastrada no
+   evento nem ordem alfabética — assim eventos antigos e novos mostram
+   os blocos sempre na mesma ordem. Funções fora dessa lista oficial
+   (cadastradas manualmente) vêm depois, em ordem alfabética entre si.
+   Nada disso altera dado nenhum — só como a mesma lista já carregada
+   é desenhada. */
 function agruparPorFuncaoPrincipal(lista, getFuncao, getNome){
-  const ev=currentEvent();
-  const ordemBase=[];
-  ((ev && ev.valoresFuncao)||[]).forEach(f=>{
-    const base=baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao));
-    if(!ordemBase.includes(base)) ordemBase.push(base);
-  });
   const grupos={};
   lista.forEach(item=>{
     const norm=normalizaFuncaoDisplay(getFuncao(item)) || 'SEM FUNÇÃO INFORMADA';
@@ -421,7 +421,7 @@ function agruparPorFuncaoPrincipal(lista, getFuncao, getNome){
   });
   const chaves=Object.keys(grupos);
   chaves.sort((a,b)=>{
-    const ia=ordemBase.indexOf(a), ib=ordemBase.indexOf(b);
+    const ia=ORDEM_OFICIAL_FUNCOES_BASE.indexOf(a), ib=ORDEM_OFICIAL_FUNCOES_BASE.indexOf(b);
     if(ia!==-1 && ib!==-1) return ia-ib;
     if(ia!==-1) return -1;
     if(ib!==-1) return 1;
@@ -1231,12 +1231,23 @@ function openClientForm(existing){
    uso em openEventForm, no ramo de criação). Eventos já existentes
    nunca passam por aqui — o ramo de edição de openEventForm não toca
    em valoresFuncao, então o array que já está salvo no evento
-   permanece exatamente como está. */
+   permanece exatamente como está. Ordem oficial: Coordenador e
+   Supervisor primeiro (sem líder), depois as demais funções cada uma
+   seguida da sua versão Líder de Equipe. */
 const FUNCOES_PADRAO_NOVO_EVENTO = [
-  'VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA','BRIGADISTA LÍDER DE EQUIPE',
-  'CARREGADOR','CARREGADOR LÍDER DE EQUIPE','PORTEIRO','PORTEIRO LÍDER DE EQUIPE',
-  'AX SERVIÇO GERAIS','AX SERVIÇO GERAIS LÍDER DE EQUIPE','COORDENADOR','SUPERVISOR'
+  'COORDENADOR','SUPERVISOR',
+  'VIGILANTE','VIGILANTE LÍDER DE EQUIPE',
+  'AUX. DE SERVIÇOS GERAIS','AUX. DE SERVIÇOS GERAIS LÍDER DE EQUIPE',
+  'BRIGADISTA','BRIGADISTA LÍDER DE EQUIPE',
+  'CARREGADOR','CARREGADOR LÍDER DE EQUIPE'
 ];
+/* Ordem oficial FIXA dos blocos de função-base, usada em todas as
+   abas que agrupam colaboradores (não é ordem alfabética, e não
+   depende da ordem em que cada evento cadastrou suas funções —
+   assim eventos antigos e novos mostram os blocos na mesma ordem
+   sempre que essas funções existirem). Funções fora desta lista
+   (cadastradas manualmente) aparecem depois, em ordem alfabética. */
+const ORDEM_OFICIAL_FUNCOES_BASE = ['COORDENADOR','SUPERVISOR','VIGILANTE','AUX. DE SERVIÇOS GERAIS','BRIGADISTA','CARREGADOR'];
 let buscaFuncaoEventoTexto = ''; // estado só de exibição (filtro), não afeta os dados salvos
 /* Agrupa visualmente a função "base" com sua variação "... LÍDER DE
    EQUIPE" logo em seguida — só ordenação de exibição, nunca grava
@@ -1247,14 +1258,22 @@ function baseDaFuncaoDisplay(funcaoNorm){
   return funcaoNorm.endsWith(sufixo) ? funcaoNorm.slice(0, -sufixo.length) : funcaoNorm;
 }
 function ordenarValoresFuncaoParaExibicao(lista){
-  /* Grupos (função base) em ordem ALFABÉTICA — pedido explicitamente
-     nesta rodada, diferente da ordem de "Valores por Função" usada nas
-     demais abas. Dentro do mesmo grupo, a base continua sempre antes
-     da variação "LÍDER DE EQUIPE". */
+  /* Ordem OFICIAL fixa dos grupos (Coordenador, Supervisor, Vigilante,
+     Aux. de Serviços Gerais, Brigadista, Carregador) — não é mais
+     alfabética. Funções fora dessa lista oficial (cadastradas
+     manualmente) vêm depois, em ordem alfabética entre si. Dentro do
+     mesmo grupo, a base continua sempre antes da variação "LÍDER DE
+     EQUIPE". */
   return [...lista].sort((a,b)=>{
     const na=normalizaFuncaoDisplay(a.funcao), nb=normalizaFuncaoDisplay(b.funcao);
     const baseA=baseDaFuncaoDisplay(na), baseB=baseDaFuncaoDisplay(nb);
-    if(baseA!==baseB) return baseA.localeCompare(baseB,'pt-BR');
+    if(baseA!==baseB){
+      const ia=ORDEM_OFICIAL_FUNCOES_BASE.indexOf(baseA), ib=ORDEM_OFICIAL_FUNCOES_BASE.indexOf(baseB);
+      if(ia!==-1 && ib!==-1) return ia-ib;
+      if(ia!==-1) return -1;
+      if(ib!==-1) return 1;
+      return baseA.localeCompare(baseB,'pt-BR');
+    }
     const aEhLider=na!==baseA, bEhLider=nb!==baseB;
     return (aEhLider?1:0)-(bEhLider?1:0);
   });
@@ -1274,13 +1293,19 @@ function renderValoresFuncaoEvento(){
     </div>
     <div id="listaFuncoesEvento">
     ${lista.length ? lista.map(f=>{
-      const temValor = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia)) && parseFloat(f.valorDia)>0;
+      /* Três estados distintos: sem valor definido nunca preenchido
+         (valorDia null/undefined/''); valor explicitamente zero
+         (definido, mas não ativa a função — regra existente mantida:
+         só valor > 0 ativa); e valor > 0 (ativa). */
+      const valorPreenchido = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia));
+      const valorNumerico = valorPreenchido ? parseFloat(f.valorDia) : null;
+      const temValor = valorPreenchido && valorNumerico>0;
       const funcaoNorm=(f.funcao||'').trim().toUpperCase().replace(/\s+/g,' ');
       return `
       <div class="client-card compacto ${temValor?'funcao-ativa':''}" data-funcao="${escapeHtml(f.funcao)}" data-funcao-busca="${escapeHtml(funcaoNorm)}">
         <div class="main">
           <div class="nome">${escapeHtml(f.funcao)}</div>
-          ${temValor ? `<div class="funcao-ativa-badge">Função ativa</div>` : `<div class="meta">Sem valor definido</div>`}
+          ${temValor ? `<div class="funcao-ativa-badge">Função ativa</div>` : (valorPreenchido ? `<div class="meta">${brl(valorNumerico)} — não ativa (valor zerado)</div>` : `<div class="meta">Sem valor definido</div>`)}
         </div>
         <div class="valor-funcao-wrap">
           <span class="prefixo">R$</span>
@@ -1591,14 +1616,14 @@ function renderPreEscala(){
       <button class="btn btn-ghost btn-sm" id="btnCopyLinkStatus" style="align-self:flex-end;">Copiar link</button>
     </div>
     ${pendentes.length ? (()=>{
-      const grupos=agruparPorFuncao(pendentes, p=>p.funcao);
+      const grupos=agruparPorFuncaoPrincipal(pendentes, p=>p.funcao, p=>p.nome);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
         ${grupos.map(g=>`
           <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
           ${g.itens.map((p,i)=>`
             <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)}</div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
+              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
               <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
               <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
             </div>`).join('')}
@@ -1606,14 +1631,14 @@ function renderPreEscala(){
       `;
     })() : `<div class="empty"><b>Ninguém aguardando avaliação</b>Compartilhe o link acima com a equipe.</div>`}
     ${decididos.length ? (()=>{
-      const gruposDecididos=agruparPorFuncao(decididos, p=>p.funcao);
+      const gruposDecididos=agruparPorFuncaoPrincipal(decididos, p=>p.funcao, p=>p.nome);
       return `
         <div class="card-sub" style="margin-top:18px;">Já avaliados</div>
         ${gruposDecididos.map(g=>`
           <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
           ${g.itens.map((p,i)=>`
             <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)}</div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
               <span class="badge ${p.status==='aprovado'?'pago':'pendente'}" style="${p.status==='recusado'?'color:var(--red); border-color:var(--red);':''}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span>
             </div>`).join('')}
         `).join('')}
@@ -1642,6 +1667,7 @@ function renderEscalaOficial(){
     ${staff.length ? (()=>{
       const grupos=agruparPorFuncaoPrincipal(staff, c=>c.funcao, c=>c.nome);
       return `
+        ${renderResumoQuantidadesFuncao(grupos)}
         <table>
           <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
           <tbody>
@@ -1759,6 +1785,7 @@ function renderEscalaHorarioDias(){
       const grupos=agruparPorFuncaoPrincipal(listaExibida, p=>p.funcao, p=>p.nome);
       const colspanEscala=2+eventoDias.length;
       return `
+        ${renderResumoQuantidadesFuncao(grupos)}
         <table>
           <thead><tr><th>#</th><th>Colaborador</th>${eventoDias.map(d=>`<th>${formatarDataComDiaSemana(d.data)}</th>`).join('')}</tr></thead>
           <tbody>
@@ -1833,6 +1860,7 @@ function renderCheckoutDias(){
     ${escaladosNoDia.length ? (()=>{
       const grupos=agruparPorFuncaoPrincipal(escaladosNoDia, p=>p.funcao, p=>p.nome);
       return `
+        ${renderResumoQuantidadesFuncao(grupos)}
         <table>
           <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th></th></tr></thead>
           <tbody>
@@ -1949,6 +1977,7 @@ function renderFechamentoNovo(){
       <button class="btn btn-ghost btn-sm ${fechamentoVisao==='datas'?'active':''}" id="btnVisaoDatas" style="${fechamentoVisao==='datas'?'background:var(--accent-soft);':''}">Por datas (impressão)</button>
     </div>
     ${fechamentoVisao==='funcao' ? renderResumoPorFuncao() : (fechamentoVisao==='datas' ? renderFechamentoPorDatas() : `
+    ${renderResumoQuantidadesFuncao(agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome))}
     <table>
       <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Valor/Função</th><th>Valor Total</th><th>Horas adicionais</th><th>Valor adicional</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
       <tbody>
@@ -2073,13 +2102,13 @@ function renderFechamentoPorDatas(){
       </tbody>
     </table>`;
   };
-  const grupos={};
-  fechamentoDados.forEach(f=>{
-    const k=f.funcao||'—';
-    if(!grupos[k]) grupos[k]={funcao:k, qtd:0, total:0};
-    grupos[k].qtd+=1; grupos[k].total+=(f.total_receber||0);
-  });
-  const linhasResumo=Object.values(grupos);
+  /* Resumo do Diretor: líder soma junto com a função principal, como
+     pedido explicitamente nesta rodada — usa a mesma regra de
+     agrupamento das demais telas (base + líder no mesmo bloco). */
+  const gruposDiretor=agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome);
+  const linhasResumo=gruposDiretor.map(g=>({
+    funcao:g.funcao, qtd:g.itens.length, total:g.itens.reduce((s,f)=>s+(f.total_receber||0),0)
+  }));
   const totalGeral=linhasResumo.reduce((s,g)=>s+g.total,0);
   const qtdGeral=linhasResumo.reduce((s,g)=>s+g.qtd,0);
   return `
@@ -2159,6 +2188,7 @@ function renderCpfsAutorizadosLista(lista){
   }
   const grupos=agruparPorFuncaoPrincipal(lista, c=>c.funcao, c=>c.nome);
   return `
+    ${renderResumoQuantidadesFuncao(grupos)}
     <table>
       <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
       <tbody>
@@ -2182,6 +2212,8 @@ function renderCpfsAutorizadosLista(lista){
 }
 function renderCpfsAutorizadosTab(){
   if(!gestorUnlocked) return lockScreenHtml('A gestão de CPFs autorizados só fica visível para o gestor.');
+  const ev=currentEvent();
+  const funcoesEvento=(ev && ev.valoresFuncao)||[];
   return `
     <div class="card-title">CPFs autorizados neste evento</div>
     <div class="card-sub">A autorização pertence sempre a este evento (CPF + evento + função) — o mesmo CPF pode estar autorizado aqui e não autorizado em outro evento.</div>
@@ -2189,7 +2221,16 @@ function renderCpfsAutorizadosTab(){
       <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
       <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
       <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
-      <div class="field"><label>Função</label><input type="text" id="novaFuncaoAut" placeholder="Ex: Vigilante"></div>
+      <div class="field">
+        <label>Função</label>
+        ${funcoesEvento.length ? `
+        <select id="novaFuncaoAutSelect">
+          ${funcoesEvento.map(f=>`<option value="${escapeHtml(f.funcao)}">${escapeHtml(f.funcao)}</option>`).join('')}
+          <option value="__outra__">+ Outra função (digitar)</option>
+        </select>
+        <input type="text" id="novaFuncaoAutTexto" placeholder="Digite a função" style="display:none; margin-top:6px;">
+        ` : `<input type="text" id="novaFuncaoAutTexto" placeholder="Ex: Vigilante">`}
+      </div>
       <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
     </div>
     <div id="cpfsAutorizadosTabela">${renderCpfsAutorizadosLista(filtrarCpfsAutorizados())}</div>
@@ -2209,11 +2250,26 @@ function attachCpfsAutorizadosHandlers(){
       attachCpfsAutorizadosRowHandlers();
     }
   };
+  const selFuncao=document.getElementById('novaFuncaoAutSelect');
+  const txtFuncao=document.getElementById('novaFuncaoAutTexto');
+  if(selFuncao && txtFuncao){
+    selFuncao.onchange=()=>{ txtFuncao.style.display = selFuncao.value==='__outra__' ? '' : 'none'; };
+  }
   const btnAdd=document.getElementById('btnAddCpfAut');
   if(btnAdd) btnAdd.onclick=async ()=>{
     const cpf=document.getElementById('novoCpfAut').value.trim();
     const nome=document.getElementById('novoNomeAut').value.trim();
-    const funcao=document.getElementById('novaFuncaoAut').value.trim();
+    /* Se existem funções cadastradas no evento (Valores por Função),
+       usa o dropdown com os nomes padronizados — evita "Vigilante"
+       vs "VIGILANTE " vs "vigilante" viraram funções diferentes. Só
+       cai no texto livre se o gestor escolher "+ Outra função" ou se
+       o evento ainda não tem nenhuma função cadastrada. */
+    let funcao;
+    if(selFuncao){
+      funcao = selFuncao.value==='__outra__' ? txtFuncao.value.trim() : selFuncao.value;
+    } else {
+      funcao = txtFuncao.value.trim();
+    }
     if(!cpf){ showToast('Informe o CPF.'); return; }
     if(!funcao){ showToast('Informe a função.'); return; }
     const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
