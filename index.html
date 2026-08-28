@@ -184,7 +184,10 @@
   .client-card .nome{font-weight:600; font-size:14px;}
   .client-card .meta{color:var(--muted); font-size:12px; margin-top:2px;}
   .client-card.funcao-ativa{background:rgba(79,179,169,0.08); border-color:var(--teal); border-width:1.5px;}
-  .client-card .funcao-ativa-badge{color:var(--teal); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-top:3px;}
+  .client-card .funcao-ativa-badge{color:var(--teal); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-top:1px;}
+  .client-card.compacto{padding:8px 14px; margin-bottom:6px; gap:12px;}
+  .client-card.compacto .nome{font-size:13px;}
+  .client-card.compacto .meta{font-size:11px; margin-top:0;}
   .valor-funcao-wrap{display:flex; align-items:center; gap:6px; white-space:nowrap;}
   .valor-funcao-wrap .prefixo{color:var(--muted); font-size:13px;}
   .input-valor-funcao-direto{width:110px;}
@@ -233,7 +236,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 11:30';
+const APP_VERSION = '26/08/2026 12:40';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -352,7 +355,7 @@ const DIAS_SEMANA_PT = ['Domingo','Segunda-feira','Terça-feira','Quarta-feira',
    deste evento; funções que não estão lá (ex: evento antigo, ou
    função digitada livre em CPFs Autorizados) vão depois, em ordem
    alfabética, sem serem misturadas com as demais. */
-function agruparPorFuncao(lista, getFuncao){
+function agruparPorFuncao(lista, getFuncao, getNome){
   const ev=currentEvent();
   const ordemEvento=((ev && ev.valoresFuncao)||[]).map(f=>normalizaFuncaoDisplay(f.funcao));
   const grupos={};
@@ -369,7 +372,23 @@ function agruparPorFuncao(lista, getFuncao){
     if(ib!==-1) return 1;
     return a.localeCompare(b,'pt-BR');
   });
-  return chaves.map(funcao=>({funcao, itens:grupos[funcao]}));
+  return chaves.map(funcao=>{
+    const itens=grupos[funcao];
+    /* Dentro da mesma função, ordena por nome — só depois disso a
+       numeração (1, 2, 3...) é calculada por quem consome o grupo. */
+    if(getNome) itens.sort((a,b)=>(getNome(a)||'').localeCompare(getNome(b)||'','pt-BR'));
+    return {funcao, itens};
+  });
+}
+/* Achata os grupos numa única lista, na ordem função→nome, com a
+   numeração já calculada e reiniciada a cada função — para ser
+   desenhada em UMA ÚNICA <table>/lista contínua (uma tabela por grupo
+   fazia cada uma calcular a largura das colunas de forma independente,
+   desalinhando entre grupos de nomes/funções de tamanhos diferentes). */
+function achatarGruposNumerados(grupos){
+  const linhas=[];
+  grupos.forEach(g=>{ g.itens.forEach((item,i)=>{ linhas.push({item, numero:i+1, funcao:g.funcao}); }); });
+  return linhas;
 }
 function normalizaFuncaoDisplay(f){ return (f||'').trim().toUpperCase().replace(/\s+/g,' '); }
 function renderResumoQuantidadesFuncao(grupos){
@@ -1165,12 +1184,36 @@ const FUNCOES_PADRAO_NOVO_EVENTO = [
   'AX SERVIÇO GERAIS','AX SERVIÇO GERAIS LÍDER DE EQUIPE','COORDENADOR','SUPERVISOR'
 ];
 let buscaFuncaoEventoTexto = ''; // estado só de exibição (filtro), não afeta os dados salvos
+/* Agrupa visualmente a função "base" com sua variação "... LÍDER DE
+   EQUIPE" logo em seguida — só ordenação de exibição, nunca grava
+   nada; a lista salva (ev.valoresFuncao) não é tocada, só uma cópia
+   é reordenada aqui para desenhar a tela. */
+function baseDaFuncaoDisplay(funcaoNorm){
+  const sufixo=' LÍDER DE EQUIPE';
+  return funcaoNorm.endsWith(sufixo) ? funcaoNorm.slice(0, -sufixo.length) : funcaoNorm;
+}
+function ordenarValoresFuncaoParaExibicao(lista){
+  const ordemBase=FUNCOES_PADRAO_NOVO_EVENTO.filter(f=>!f.endsWith(' LÍDER DE EQUIPE'));
+  return [...lista].sort((a,b)=>{
+    const na=normalizaFuncaoDisplay(a.funcao), nb=normalizaFuncaoDisplay(b.funcao);
+    const baseA=baseDaFuncaoDisplay(na), baseB=baseDaFuncaoDisplay(nb);
+    if(baseA!==baseB){
+      const ia=ordemBase.indexOf(baseA), ib=ordemBase.indexOf(baseB);
+      if(ia!==-1 && ib!==-1) return ia-ib;
+      if(ia!==-1) return -1;
+      if(ib!==-1) return 1;
+      return baseA.localeCompare(baseB,'pt-BR');
+    }
+    const aEhLider=na!==baseA, bEhLider=nb!==baseB;
+    return (aEhLider?1:0)-(bEhLider?1:0);
+  });
+}
 function renderValoresFuncaoEvento(){
   if(!gestorUnlocked){
     return lockScreenHtml('O valor pago por função neste evento só fica visível para o gestor.');
   }
   const ev = currentEvent();
-  const lista = ev.valoresFuncao || [];
+  const lista = ordenarValoresFuncaoParaExibicao(ev.valoresFuncao || []);
   return `
     <div class="card-title">Valores por função — só neste evento</div>
     <div class="card-sub">Defina quanto cada função recebe por dia trabalhado neste evento. Esses valores valem só para "${escapeHtml(ev.evento)}" — outros eventos podem ter valores diferentes para a mesma função.</div>
@@ -1183,13 +1226,13 @@ function renderValoresFuncaoEvento(){
       const temValor = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia)) && parseFloat(f.valorDia)>0;
       const funcaoNorm=(f.funcao||'').trim().toUpperCase().replace(/\s+/g,' ');
       return `
-      <div class="client-card ${temValor?'funcao-ativa':''}" data-funcao="${escapeHtml(f.funcao)}" data-funcao-busca="${escapeHtml(funcaoNorm)}">
+      <div class="client-card compacto ${temValor?'funcao-ativa':''}" data-funcao="${escapeHtml(f.funcao)}" data-funcao-busca="${escapeHtml(funcaoNorm)}">
         <div class="main">
           <div class="nome">${escapeHtml(f.funcao)}</div>
-          ${temValor ? `<div class="funcao-ativa-badge">Função ativa</div>` : `<div class="meta">Sem valor definido — preencha para ativar esta função neste evento</div>`}
+          ${temValor ? `<div class="funcao-ativa-badge">Função ativa</div>` : `<div class="meta">Sem valor definido</div>`}
         </div>
         <div class="valor-funcao-wrap">
-          <span class="prefixo">Valor/dia R$</span>
+          <span class="prefixo">R$</span>
           <input type="number" class="input-valor-funcao-direto" min="0" step="0.01" placeholder="0,00" value="${f.valorDia!=null && f.valorDia!=='' ? f.valorDia : ''}">
         </div>
         <button class="btn btn-danger btn-sm btn-del-funcao-evento">Excluir</button>
@@ -1546,25 +1589,25 @@ function renderEscalaOficial(){
       ${comTelefone.length<staff.length ? `<span style="color:var(--muted); font-size:12px; margin-left:8px;">${staff.length-comTelefone.length} colaborador(es) sem telefone cadastrado não serão notificados.</span>` : ''}
     </div>` : ''}
     ${staff.length ? (()=>{
-      const grupos=agruparPorFuncao(staff, c=>c.funcao);
+      const grupos=agruparPorFuncao(staff, c=>c.funcao, c=>c.nome);
+      const linhas=achatarGruposNumerados(grupos);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
-        ${grupos.map(g=>`
-          <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-          <table>
-            <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
-            <tbody>
-              ${g.itens.map((c,i)=>`
-                <tr data-id="${c.id}">
-                  <td class="mono">${i+1}</td>
-                  <td>${escapeHtml(c.nome)}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
-                  <td class="mono">${escapeHtml(c.cpf||'—')}</td>
-                  <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
-                  <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
-                  <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
-                </tr>`).join('')}
-            </tbody>
-          </table>`).join('')}
+        <table>
+          <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
+          <tbody>
+            ${linhas.map(({item:c,numero,funcao})=>`
+              <tr data-id="${c.id}">
+                <td class="mono">${numero}</td>
+                <td>${escapeHtml(c.nome)}</td>
+                <td>${escapeHtml(funcao)}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
+                <td class="mono">${escapeHtml(c.cpf||'—')}</td>
+                <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
+                <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
+                <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
       `;
     })() : `<div class="empty"><b>Ninguém confirmado ainda</b>Aprove um interessado na Pré-Escala ou adicione manualmente.</div>`}
   `;
@@ -1741,45 +1784,45 @@ function renderCheckoutDias(){
       </select>
     </div>
     ${escaladosNoDia.length ? (()=>{
-      const grupos=agruparPorFuncao(escaladosNoDia, p=>p.funcao);
+      const grupos=agruparPorFuncao(escaladosNoDia, p=>p.funcao, p=>p.nome);
+      const linhas=achatarGruposNumerados(grupos);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
-        ${grupos.map(g=>`
-          <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-          <table>
-            <thead><tr><th>#</th><th>Colaborador</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th></th></tr></thead>
-            <tbody>
-              ${g.itens.map((p,i)=>{
-                const pr=presencaDoDia(pid(p), diaId);
-                const temEntrada=pr && pr.entrada_ts;
-                const temSaida=pr && pr.saida_ts;
-                return `<tr data-participacao-id="${pid(p)}">
-                  <td class="mono">${i+1}</td>
-                  <td>${escapeHtml(p.nome)}</td>
-                  <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
-                  <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
-                  <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
-                  <td class="mono">${horasExtraDe(pr)!=null ? horasExtraDe(pr)+'h' : (temSaida?'não informado':'—')}</td>
-                  <td>
-                    ${!temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
-                    ${temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
-                    ${temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
-                      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
-                        <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
-                        <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
-                      </div>` : ''}
-                    ${temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
-                      <div style="display:flex;align-items:center;gap:6px;">
-                        <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
-                        <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
-                      </div>` : ''}
-                    ${temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
-                  </td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>`).join('')}
+        <table>
+          <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th></th></tr></thead>
+          <tbody>
+            ${linhas.map(({item:p,numero,funcao})=>{
+              const pr=presencaDoDia(pid(p), diaId);
+              const temEntrada=pr && pr.entrada_ts;
+              const temSaida=pr && pr.saida_ts;
+              return `<tr data-participacao-id="${pid(p)}">
+                <td class="mono">${numero}</td>
+                <td>${escapeHtml(p.nome)}</td>
+                <td>${escapeHtml(funcao)}</td>
+                <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
+                <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+                <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+                <td class="mono">${horasExtraDe(pr)!=null ? horasExtraDe(pr)+'h' : (temSaida?'não informado':'—')}</td>
+                <td>
+                  ${!temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
+                  ${temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
+                  ${temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                      <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
+                      <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
+                      <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
+                    </div>` : ''}
+                  ${temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
+                    <div style="display:flex;align-items:center;gap:6px;">
+                      <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
+                      <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
+                    </div>` : ''}
+                  ${temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+                </td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
       `;
     })() : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`}
   `;
@@ -2064,29 +2107,29 @@ function renderCpfsAutorizadosLista(lista){
   if(!lista.length){
     return `<div class="empty"><b>${cpfsAutorizadosBusca.trim()?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${cpfsAutorizadosBusca.trim()?'':'Use o formulário acima para autorizar o primeiro.'}</div>`;
   }
-  const grupos=agruparPorFuncao(lista, c=>c.funcao);
+  const grupos=agruparPorFuncao(lista, c=>c.funcao, c=>c.nome);
+  const linhas=achatarGruposNumerados(grupos);
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
-    ${grupos.map(g=>`
-      <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-      <table>
-        <thead><tr><th>#</th><th>CPF</th><th>Nome</th><th>Status</th><th></th></tr></thead>
-        <tbody>
-          ${g.itens.map((c,i)=>`
-            <tr data-cpf="${c.cpf}">
-              <td class="mono">${i+1}</td>
-              <td class="mono">${formatCpf(c.cpf)}</td>
-              <td>${escapeHtml(c.nome||'—')}</td>
-              <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
-              <td>
-                <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
-                ${c.autorizado
-                  ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
-                  : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
-              </td>
-            </tr>`).join('')}
-        </tbody>
-      </table>`).join('')}
+    <table>
+      <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+        ${linhas.map(({item:c,numero,funcao})=>`
+          <tr data-cpf="${c.cpf}">
+            <td class="mono">${numero}</td>
+            <td class="mono">${formatCpf(c.cpf)}</td>
+            <td>${escapeHtml(c.nome||'—')}</td>
+            <td>${escapeHtml(funcao)}</td>
+            <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
+            <td>
+              <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
+              ${c.autorizado
+                ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
+                : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
   `;
 }
 function renderCpfsAutorizadosTab(){
