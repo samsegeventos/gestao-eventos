@@ -41,6 +41,7 @@
   .grupo-funcao-titulo{font-weight:700; font-size:13px; text-transform:uppercase; letter-spacing:0.3px; margin:20px 0 8px; padding-bottom:6px; border-bottom:1px solid var(--line); color:var(--amber);}
   .grupo-funcao-titulo:first-of-type{margin-top:4px;}
   .grupo-funcao-count{color:var(--muted); font-weight:400; text-transform:none;}
+  .linha-titulo-grupo td{background:rgba(232,163,61,0.07); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0.3px; color:var(--amber); padding:8px 10px; border-bottom:1px solid var(--line);}
   .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
   .badge.aberto{color:var(--amber); border-color:var(--amber); background:rgba(232,163,61,0.08);}
   .badge.finalizado{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
@@ -185,9 +186,10 @@
   .client-card .meta{color:var(--muted); font-size:12px; margin-top:2px;}
   .client-card.funcao-ativa{background:rgba(79,179,169,0.08); border-color:var(--teal); border-width:1.5px;}
   .client-card .funcao-ativa-badge{color:var(--teal); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-top:1px;}
-  .client-card.compacto{padding:8px 14px; margin-bottom:6px; gap:12px;}
-  .client-card.compacto .nome{font-size:13px;}
-  .client-card.compacto .meta{font-size:11px; margin-top:0;}
+  .client-card.compacto{padding:6px 14px; margin-bottom:4px; gap:12px; min-height:0;}
+  .client-card.compacto .nome{font-size:13px; line-height:1.3;}
+  .client-card.compacto .meta{font-size:11px; margin-top:0; line-height:1.3;}
+  .client-card.compacto .funcao-ativa-badge{margin-top:0; line-height:1.3;}
   .valor-funcao-wrap{display:flex; align-items:center; gap:6px; white-space:nowrap;}
   .valor-funcao-wrap .prefixo{color:var(--muted); font-size:13px;}
   .input-valor-funcao-direto{width:110px;}
@@ -236,7 +238,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 12:40';
+const APP_VERSION = '26/08/2026 13:20';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -394,6 +396,58 @@ function normalizaFuncaoDisplay(f){ return (f||'').trim().toUpperCase().replace(
 function renderResumoQuantidadesFuncao(grupos){
   if(!grupos.length) return '';
   return `<div class="resumo-funcoes"><b>Resumo:</b> ${grupos.map(g=>`${escapeHtml(g.funcao)}: ${g.itens.length}`).join(' &nbsp;|&nbsp; ')}</div>`;
+}
+/* ================= AGRUPAMENTO POR FUNÇÃO PRINCIPAL (só exibição) =================
+   "VIGILANTE" e "VIGILANTE LÍDER DE EQUIPE" caem no MESMO bloco visual
+   "VIGILANTE" — nunca dois blocos separados. Dentro do bloco: líderes
+   primeiro (ordem alfabética entre si), depois os demais colaboradores
+   em ordem alfabética. A contagem do bloco inclui líderes. Usado em
+   CPFs Autorizados, Escala Oficial, Checkout por Dia e Fechamento
+   Financeiro. Nada disso altera dado nenhum — só como a mesma lista já
+   carregada é desenhada. */
+function agruparPorFuncaoPrincipal(lista, getFuncao, getNome){
+  const ev=currentEvent();
+  const ordemBase=[];
+  ((ev && ev.valoresFuncao)||[]).forEach(f=>{
+    const base=baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao));
+    if(!ordemBase.includes(base)) ordemBase.push(base);
+  });
+  const grupos={};
+  lista.forEach(item=>{
+    const norm=normalizaFuncaoDisplay(getFuncao(item)) || 'SEM FUNÇÃO INFORMADA';
+    const base=baseDaFuncaoDisplay(norm);
+    if(!grupos[base]) grupos[base]=[];
+    grupos[base].push(item);
+  });
+  const chaves=Object.keys(grupos);
+  chaves.sort((a,b)=>{
+    const ia=ordemBase.indexOf(a), ib=ordemBase.indexOf(b);
+    if(ia!==-1 && ib!==-1) return ia-ib;
+    if(ia!==-1) return -1;
+    if(ib!==-1) return 1;
+    return a.localeCompare(b,'pt-BR');
+  });
+  return chaves.map(base=>{
+    const itens=grupos[base];
+    itens.sort((a,b)=>{
+      const na=normalizaFuncaoDisplay(getFuncao(a)), nb=normalizaFuncaoDisplay(getFuncao(b));
+      const aLider=na!==base, bLider=nb!==base;
+      if(aLider!==bLider) return aLider?-1:1;
+      return (getNome(a)||'').localeCompare(getNome(b)||'','pt-BR');
+    });
+    return {funcao:base, itens};
+  });
+}
+/* Desenha os grupos dentro de UMA ÚNICA <table> (cabeçalho aparece só
+   uma vez) — cada grupo vira uma linha de título (colspan cobrindo
+   todas as colunas) seguida das linhas normais dos colaboradores.
+   Continuar na mesma tabela é o que garante que nomes/funções de
+   tamanhos diferentes entre grupos não desalinhem as colunas. */
+function linhasComTituloDeGrupo(grupos, colspan, renderLinha){
+  return grupos.map(g=>`
+    <tr class="linha-titulo-grupo"><td colspan="${colspan}">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</td></tr>
+    ${g.itens.map((item,i)=>renderLinha(item,i+1)).join('')}
+  `).join('');
 }
 function formatarDataComDiaSemana(dataIso){
   /* Data local (T00:00:00, sem 'Z') — evita que o dia da semana saia
@@ -1193,17 +1247,14 @@ function baseDaFuncaoDisplay(funcaoNorm){
   return funcaoNorm.endsWith(sufixo) ? funcaoNorm.slice(0, -sufixo.length) : funcaoNorm;
 }
 function ordenarValoresFuncaoParaExibicao(lista){
-  const ordemBase=FUNCOES_PADRAO_NOVO_EVENTO.filter(f=>!f.endsWith(' LÍDER DE EQUIPE'));
+  /* Grupos (função base) em ordem ALFABÉTICA — pedido explicitamente
+     nesta rodada, diferente da ordem de "Valores por Função" usada nas
+     demais abas. Dentro do mesmo grupo, a base continua sempre antes
+     da variação "LÍDER DE EQUIPE". */
   return [...lista].sort((a,b)=>{
     const na=normalizaFuncaoDisplay(a.funcao), nb=normalizaFuncaoDisplay(b.funcao);
     const baseA=baseDaFuncaoDisplay(na), baseB=baseDaFuncaoDisplay(nb);
-    if(baseA!==baseB){
-      const ia=ordemBase.indexOf(baseA), ib=ordemBase.indexOf(baseB);
-      if(ia!==-1 && ib!==-1) return ia-ib;
-      if(ia!==-1) return -1;
-      if(ib!==-1) return 1;
-      return baseA.localeCompare(baseB,'pt-BR');
-    }
+    if(baseA!==baseB) return baseA.localeCompare(baseB,'pt-BR');
     const aEhLider=na!==baseA, bEhLider=nb!==baseB;
     return (aEhLider?1:0)-(bEhLider?1:0);
   });
@@ -1589,23 +1640,21 @@ function renderEscalaOficial(){
       ${comTelefone.length<staff.length ? `<span style="color:var(--muted); font-size:12px; margin-left:8px;">${staff.length-comTelefone.length} colaborador(es) sem telefone cadastrado não serão notificados.</span>` : ''}
     </div>` : ''}
     ${staff.length ? (()=>{
-      const grupos=agruparPorFuncao(staff, c=>c.funcao, c=>c.nome);
-      const linhas=achatarGruposNumerados(grupos);
+      const grupos=agruparPorFuncaoPrincipal(staff, c=>c.funcao, c=>c.nome);
       return `
-        ${renderResumoQuantidadesFuncao(grupos)}
         <table>
           <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
           <tbody>
-            ${linhas.map(({item:c,numero,funcao})=>`
+            ${linhasComTituloDeGrupo(grupos, 7, (c,numero)=>`
               <tr data-id="${c.id}">
                 <td class="mono">${numero}</td>
                 <td>${escapeHtml(c.nome)}</td>
-                <td>${escapeHtml(funcao)}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
+                <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
                 <td class="mono">${escapeHtml(c.cpf||'—')}</td>
                 <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
                 <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
                 <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
-              </tr>`).join('')}
+              </tr>`)}
           </tbody>
         </table>
       `;
@@ -1704,7 +1753,26 @@ function renderEscalaHorarioDias(){
   }
 
   return `
-    <div class="card-title">Dias do evento</div>
+    <div class="card-title">Escala por dia</div>
+    <div class="card-sub">Marque em quais dias específicos cada colaborador está previsto para trabalhar. Lista de todos os dias do evento lado a lado — não há um único "dia selecionado" nesta tabela.</div>
+    ${(()=>{
+      const grupos=agruparPorFuncaoPrincipal(listaExibida, p=>p.funcao, p=>p.nome);
+      const colspanEscala=2+eventoDias.length;
+      return `
+        <table>
+          <thead><tr><th>#</th><th>Colaborador</th>${eventoDias.map(d=>`<th>${formatarDataComDiaSemana(d.data)}</th>`).join('')}</tr></thead>
+          <tbody>
+            ${linhasComTituloDeGrupo(grupos, colspanEscala, (p,numero)=>`
+              <tr data-participacao-id="${pid(p)}">
+                <td class="mono">${numero}</td>
+                <td>${escapeHtml(p.nome)}</td>
+                ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
+              </tr>`)}
+          </tbody>
+        </table>
+      `;
+    })()}
+    <div class="card-title" style="margin-top:28px;">Dias do evento — horário</div>
     <div class="card-sub">Horário de cada dia — clique em "Editar" para ajustar um dia específico.</div>
     <table>
       <thead><tr><th>Data</th><th>Início</th><th>Fim</th><th></th></tr></thead>
@@ -1718,27 +1786,6 @@ function renderEscalaHorarioDias(){
           </tr>`).join('')}
       </tbody>
     </table>
-    <div class="card-title" style="margin-top:22px;">Escala por dia</div>
-    <div class="card-sub">Marque em quais dias específicos cada colaborador está previsto para trabalhar. Lista de todos os dias do evento lado a lado — não há um único "dia selecionado" nesta tabela.</div>
-    ${(()=>{
-      const grupos=agruparPorFuncao(listaExibida, p=>p.funcao);
-      return `
-        ${renderResumoQuantidadesFuncao(grupos)}
-        ${grupos.map(g=>`
-          <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-          <table>
-            <thead><tr><th>#</th><th>Colaborador</th>${eventoDias.map(d=>`<th>${formatarDataComDiaSemana(d.data)}</th>`).join('')}</tr></thead>
-            <tbody>
-              ${g.itens.map((p,i)=>`
-                <tr data-participacao-id="${pid(p)}">
-                  <td class="mono">${i+1}</td>
-                  <td>${escapeHtml(p.nome)}</td>
-                  ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
-                </tr>`).join('')}
-            </tbody>
-          </table>`).join('')}
-      `;
-    })()}
   `;
 }
 function attachEscalaHorarioHandlers(){
@@ -1784,21 +1831,19 @@ function renderCheckoutDias(){
       </select>
     </div>
     ${escaladosNoDia.length ? (()=>{
-      const grupos=agruparPorFuncao(escaladosNoDia, p=>p.funcao, p=>p.nome);
-      const linhas=achatarGruposNumerados(grupos);
+      const grupos=agruparPorFuncaoPrincipal(escaladosNoDia, p=>p.funcao, p=>p.nome);
       return `
-        ${renderResumoQuantidadesFuncao(grupos)}
         <table>
           <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th></th></tr></thead>
           <tbody>
-            ${linhas.map(({item:p,numero,funcao})=>{
+            ${linhasComTituloDeGrupo(grupos, 8, (p,numero)=>{
               const pr=presencaDoDia(pid(p), diaId);
               const temEntrada=pr && pr.entrada_ts;
               const temSaida=pr && pr.saida_ts;
               return `<tr data-participacao-id="${pid(p)}">
                 <td class="mono">${numero}</td>
                 <td>${escapeHtml(p.nome)}</td>
-                <td>${escapeHtml(funcao)}</td>
+                <td>${escapeHtml(p.funcao||'—')}</td>
                 <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
                 <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
                 <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
@@ -1820,7 +1865,7 @@ function renderCheckoutDias(){
                   ${temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
                 </td>
               </tr>`;
-            }).join('')}
+            })}
           </tbody>
         </table>
       `;
@@ -1905,11 +1950,12 @@ function renderFechamentoNovo(){
     </div>
     ${fechamentoVisao==='funcao' ? renderResumoPorFuncao() : (fechamentoVisao==='datas' ? renderFechamentoPorDatas() : `
     <table>
-      <thead><tr><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Valor/Função</th><th>Valor Total</th><th>Horas adicionais</th><th>Valor adicional</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas trabalhadas</th><th>Valor/Função</th><th>Valor Total</th><th>Horas adicionais</th><th>Valor adicional</th><th>Desconto</th><th>Total a receber</th><th></th></tr></thead>
       <tbody>
-        ${fechamentoDados.map(f=>{
+        ${linhasComTituloDeGrupo(agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome), 12, (f,numero)=>{
           const horas=Math.floor((f.horas_trabalhadas_minutos||0)/60), mins=(f.horas_trabalhadas_minutos||0)%60;
           return `<tr data-participacao-id="${f.participacao_id}">
+            <td class="mono">${numero}</td>
             <td>${escapeHtml(f.nome)}</td>
             <td>${escapeHtml(f.funcao)}</td>
             <td class="mono">${f.dias_trabalhados}</td>
@@ -1922,7 +1968,7 @@ function renderFechamentoNovo(){
             <td class="mono" style="${f.total_receber<0?'color:var(--red);':''}">${brl(f.total_receber)}</td>
             <td><button class="btn btn-amber btn-sm btn-recalcular">Recalcular</button></td>
           </tr>`;
-        }).join('')}
+        })}
       </tbody>
     </table>`)}
   `;
@@ -1993,10 +2039,13 @@ function renderFechamentoPorDatas(){
      dia em que ele trabalhou, segundo o registro real do Checkout),
      seguido das horas adicionais daquele dia específico, se houver. */
   if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
-  const ehVigilante=f=>(f.funcao||'').trim().toLowerCase()==='vigilante';
+  const ehVigilante=f=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao))==='VIGILANTE';
   const vigilantes=fechamentoDados.filter(ehVigilante);
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
-  const gerarTabela=(lista)=>`
+  const colspanDatas=2+eventoDias.length+4+1; // Colaborador+Função/Valor + 1 por dia + Valor Total/Adic./Desc./Total + Assinatura
+  const gerarTabela=(lista)=>{
+    const grupos=agruparPorFuncaoPrincipal(lista, f=>f.funcao, f=>f.nome);
+    return `
     <table class="tabela-fechamento-datas">
       <thead><tr>
         <th>Colaborador</th>
@@ -2005,7 +2054,7 @@ function renderFechamentoPorDatas(){
         <th>Valor Total</th><th>Adic.</th><th>Desc.</th><th>Total</th><th class="col-assinatura">Assinatura</th>
       </tr></thead>
       <tbody>
-        ${lista.map(f=>`
+        ${linhasComTituloDeGrupo(grupos, colspanDatas, (f)=>`
           <tr>
             <td>${escapeHtml(f.nome)}</td>
             <td>${escapeHtml(f.funcao)} / ${f.valor_diaria!=null?numeroPlano(f.valor_diaria):'—'}</td>
@@ -2020,9 +2069,10 @@ function renderFechamentoPorDatas(){
             <td>${brl(f.desconto)}</td>
             <td>${brl(f.total_receber)}</td>
             <td class="col-assinatura"></td>
-          </tr>`).join('')}
+          </tr>`)}
       </tbody>
     </table>`;
+  };
   const grupos={};
   fechamentoDados.forEach(f=>{
     const k=f.funcao||'—';
@@ -2107,19 +2157,17 @@ function renderCpfsAutorizadosLista(lista){
   if(!lista.length){
     return `<div class="empty"><b>${cpfsAutorizadosBusca.trim()?'Nenhum resultado para essa busca':'Nenhum CPF autorizado neste evento ainda'}</b>${cpfsAutorizadosBusca.trim()?'':'Use o formulário acima para autorizar o primeiro.'}</div>`;
   }
-  const grupos=agruparPorFuncao(lista, c=>c.funcao, c=>c.nome);
-  const linhas=achatarGruposNumerados(grupos);
+  const grupos=agruparPorFuncaoPrincipal(lista, c=>c.funcao, c=>c.nome);
   return `
-    ${renderResumoQuantidadesFuncao(grupos)}
     <table>
       <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
       <tbody>
-        ${linhas.map(({item:c,numero,funcao})=>`
+        ${linhasComTituloDeGrupo(grupos, 6, (c,numero)=>`
           <tr data-cpf="${c.cpf}">
             <td class="mono">${numero}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
             <td>${escapeHtml(c.nome||'—')}</td>
-            <td>${escapeHtml(funcao)}</td>
+            <td>${escapeHtml(c.funcao||'—')}</td>
             <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
             <td>
               <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
@@ -2127,7 +2175,7 @@ function renderCpfsAutorizadosLista(lista){
                 ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
                 : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
             </td>
-          </tr>`).join('')}
+          </tr>`)}
       </tbody>
     </table>
   `;
