@@ -178,6 +178,11 @@
   .client-card .main{flex:1; min-width:160px;}
   .client-card .nome{font-weight:600; font-size:14px;}
   .client-card .meta{color:var(--muted); font-size:12px; margin-top:2px;}
+  .client-card.funcao-ativa{background:rgba(79,179,169,0.08); border-color:var(--teal); border-width:1.5px;}
+  .client-card .funcao-ativa-badge{color:var(--teal); font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; margin-top:3px;}
+  .valor-funcao-wrap{display:flex; align-items:center; gap:6px; white-space:nowrap;}
+  .valor-funcao-wrap .prefixo{color:var(--muted); font-size:13px;}
+  .input-valor-funcao-direto{width:110px;}
 
   /* ---------- public interest form ---------- */
   .wrap-narrow{max-width:480px; margin:60px auto; padding:0 20px;}
@@ -223,7 +228,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 10:00';
+const APP_VERSION = '26/08/2026 10:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1122,6 +1127,7 @@ const FUNCOES_PADRAO_NOVO_EVENTO = [
   'CARREGADOR','CARREGADOR LÍDER DE EQUIPE','PORTEIRO','PORTEIRO LÍDER DE EQUIPE',
   'AX SERVIÇO GERAIS','AX SERVIÇO GERAIS LÍDER DE EQUIPE','COORDENADOR','SUPERVISOR'
 ];
+let buscaFuncaoEventoTexto = ''; // estado só de exibição (filtro), não afeta os dados salvos
 function renderValoresFuncaoEvento(){
   if(!gestorUnlocked){
     return lockScreenHtml('O valor pago por função neste evento só fica visível para o gestor.');
@@ -1131,19 +1137,43 @@ function renderValoresFuncaoEvento(){
   return `
     <div class="card-title">Valores por função — só neste evento</div>
     <div class="card-sub">Defina quanto cada função recebe por dia trabalhado neste evento. Esses valores valem só para "${escapeHtml(ev.evento)}" — outros eventos podem ter valores diferentes para a mesma função.</div>
-    <div class="add-row">
+    <div class="add-row" style="gap:10px; flex-wrap:wrap;">
+      <input type="text" id="buscaFuncaoEvento" placeholder="🔍 Buscar função..." value="${escapeHtml(buscaFuncaoEventoTexto)}" style="flex:1; min-width:200px;">
       <button class="btn btn-amber" id="btnNewFuncaoEvento">+ Nova função para este evento</button>
     </div>
+    <div id="listaFuncoesEvento">
     ${lista.length ? lista.map(f=>{
-      const semValor = f.valorDia===null || f.valorDia===undefined || f.valorDia==='' || isNaN(parseFloat(f.valorDia));
+      const temValor = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia)) && parseFloat(f.valorDia)>0;
+      const funcaoNorm=(f.funcao||'').trim().toUpperCase().replace(/\s+/g,' ');
       return `
-      <div class="client-card" data-funcao="${escapeHtml(f.funcao)}">
-        <div class="main"><div class="nome">${escapeHtml(f.funcao)}</div><div class="meta">${semValor ? 'Sem valor definido — preencha para ativar esta função neste evento' : brl(parseFloat(f.valorDia))+' por dia trabalhado'}</div></div>
-        <button class="btn btn-ghost btn-sm btn-edit-funcao-evento">Editar</button>
+      <div class="client-card ${temValor?'funcao-ativa':''}" data-funcao="${escapeHtml(f.funcao)}" data-funcao-busca="${escapeHtml(funcaoNorm)}">
+        <div class="main">
+          <div class="nome">${escapeHtml(f.funcao)}</div>
+          ${temValor ? `<div class="funcao-ativa-badge">Função ativa</div>` : `<div class="meta">Sem valor definido — preencha para ativar esta função neste evento</div>`}
+        </div>
+        <div class="valor-funcao-wrap">
+          <span class="prefixo">Valor/dia R$</span>
+          <input type="number" class="input-valor-funcao-direto" min="0" step="0.01" placeholder="0,00" value="${f.valorDia!=null && f.valorDia!=='' ? f.valorDia : ''}">
+        </div>
         <button class="btn btn-danger btn-sm btn-del-funcao-evento">Excluir</button>
       </div>`;
     }).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função (ex: Vigilante, Porteiro) para o cálculo automático funcionar neste evento.</div>`}
+    </div>
+    <div id="buscaFuncaoEventoVazio" class="empty" style="display:none;"><b>Nenhuma função encontrada</b>Tente buscar por outro termo.</div>
   `;
+}
+function filtrarFuncoesEvento(){
+  const termo=(buscaFuncaoEventoTexto||'').trim().toUpperCase().replace(/\s+/g,' ');
+  const cards=document.querySelectorAll('#listaFuncoesEvento .client-card');
+  let algumVisivel=false;
+  cards.forEach(card=>{
+    const alvo=card.dataset.funcaoBusca||'';
+    const bate = !termo || alvo.includes(termo);
+    card.style.display = bate ? '' : 'none';
+    if(bate) algumVisivel=true;
+  });
+  const vazio=document.getElementById('buscaFuncaoEventoVazio');
+  if(vazio) vazio.style.display = (cards.length && !algumVisivel) ? '' : 'none';
 }
 function openFuncaoEventoForm(existing){
   const ev = currentEvent();
@@ -2205,9 +2235,6 @@ function attachDetailHandlers(){
 
   const btnNewFuncaoEvento=document.getElementById('btnNewFuncaoEvento');
   if(btnNewFuncaoEvento) btnNewFuncaoEvento.onclick=()=>openFuncaoEventoForm();
-  document.querySelectorAll('.btn-edit-funcao-evento').forEach(btn=>{
-    btn.onclick=(e)=>{ const nome=e.target.closest('.client-card').dataset.funcao; openFuncaoEventoForm((currentEvent().valoresFuncao||[]).find(f=>f.funcao===nome)); };
-  });
   document.querySelectorAll('.btn-del-funcao-evento').forEach(btn=>{
     btn.onclick=async (e)=>{
       const nome=e.target.closest('.client-card').dataset.funcao;
@@ -2216,6 +2243,32 @@ function attachDetailHandlers(){
       ev.valoresFuncao=(ev.valoresFuncao||[]).filter(f=>f.funcao!==nome);
       await saveEvents();
       renderShell();
+    };
+  });
+  const buscaFuncaoInput=document.getElementById('buscaFuncaoEvento');
+  if(buscaFuncaoInput){
+    /* Filtro é só manipulação de DOM (mostra/esconde cartões) — de
+       propósito, sem chamar renderShell() a cada tecla, para não
+       perder o foco/cursor do campo de busca enquanto o gestor digita. */
+    buscaFuncaoInput.oninput=()=>{ buscaFuncaoEventoTexto=buscaFuncaoInput.value; filtrarFuncoesEvento(); };
+    filtrarFuncoesEvento();
+  }
+  document.querySelectorAll('.input-valor-funcao-direto').forEach(inp=>{
+    inp.onchange=async ()=>{
+      const nome=inp.closest('.client-card').dataset.funcao;
+      const ev=currentEvent();
+      const entry=(ev.valoresFuncao||[]).find(f=>f.funcao===nome);
+      if(!entry) return;
+      const bruto=inp.value.trim();
+      if(bruto===''){ entry.valorDia=null; }
+      else{
+        const novoValor=parseFloat(bruto);
+        if(isNaN(novoValor) || novoValor<0){ showToast('Informe um valor numérico válido.'); inp.value=entry.valorDia!=null?entry.valorDia:''; return; }
+        entry.valorDia=novoValor;
+      }
+      const r=await saveEvents();
+      if(r && r.ok){ renderShell(); }
+      else{ showToast('Erro ao salvar valor: '+(r && r.error && r.error.message ? r.error.message : 'tente novamente.')); }
     };
   });
 
