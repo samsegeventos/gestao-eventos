@@ -238,7 +238,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 14:10';
+const APP_VERSION = '26/08/2026 14:35';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1232,14 +1232,18 @@ function openClientForm(existing){
    nunca passam por aqui — o ramo de edição de openEventForm não toca
    em valoresFuncao, então o array que já está salvo no evento
    permanece exatamente como está. Ordem oficial: Coordenador e
-   Supervisor primeiro (sem líder), depois as demais funções cada uma
-   seguida da sua versão Líder de Equipe. */
+   Supervisor primeiro (sem líder — únicas exceções), depois as demais
+   funções, cada uma imediatamente seguida da sua versão Líder de
+   Equipe. Porteiro/Porteiro Líder de Equipe existiam numa lista
+   anterior e foram restaurados aqui — nenhuma função pré-cadastrada
+   que já existiu deve ser removida. */
 const FUNCOES_PADRAO_NOVO_EVENTO = [
   'COORDENADOR','SUPERVISOR',
   'VIGILANTE','VIGILANTE LÍDER DE EQUIPE',
   'AUX. DE SERVIÇOS GERAIS','AUX. DE SERVIÇOS GERAIS LÍDER DE EQUIPE',
   'BRIGADISTA','BRIGADISTA LÍDER DE EQUIPE',
-  'CARREGADOR','CARREGADOR LÍDER DE EQUIPE'
+  'CARREGADOR','CARREGADOR LÍDER DE EQUIPE',
+  'PORTEIRO','PORTEIRO LÍDER DE EQUIPE'
 ];
 /* Ordem oficial FIXA dos blocos de função-base, usada em todas as
    abas que agrupam colaboradores (não é ordem alfabética, e não
@@ -1247,7 +1251,7 @@ const FUNCOES_PADRAO_NOVO_EVENTO = [
    assim eventos antigos e novos mostram os blocos na mesma ordem
    sempre que essas funções existirem). Funções fora desta lista
    (cadastradas manualmente) aparecem depois, em ordem alfabética. */
-const ORDEM_OFICIAL_FUNCOES_BASE = ['COORDENADOR','SUPERVISOR','VIGILANTE','AUX. DE SERVIÇOS GERAIS','BRIGADISTA','CARREGADOR'];
+const ORDEM_OFICIAL_FUNCOES_BASE = ['COORDENADOR','SUPERVISOR','VIGILANTE','AUX. DE SERVIÇOS GERAIS','BRIGADISTA','CARREGADOR','PORTEIRO'];
 let buscaFuncaoEventoTexto = ''; // estado só de exibição (filtro), não afeta os dados salvos
 /* Agrupa visualmente a função "base" com sua variação "... LÍDER DE
    EQUIPE" logo em seguida — só ordenação de exibição, nunca grava
