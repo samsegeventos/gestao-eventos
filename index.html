@@ -223,7 +223,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 09:15';
+const APP_VERSION = '26/08/2026 10:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1112,6 +1112,16 @@ function openClientForm(existing){
 }
 
 /* ================= VALORES POR FUNÇÃO (protegido) ================= */
+/* Lista padrão de funções pré-carregada SOMENTE em eventos novos (ver
+   uso em openEventForm, no ramo de criação). Eventos já existentes
+   nunca passam por aqui — o ramo de edição de openEventForm não toca
+   em valoresFuncao, então o array que já está salvo no evento
+   permanece exatamente como está. */
+const FUNCOES_PADRAO_NOVO_EVENTO = [
+  'VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA','BRIGADISTA LÍDER DE EQUIPE',
+  'CARREGADOR','CARREGADOR LÍDER DE EQUIPE','PORTEIRO','PORTEIRO LÍDER DE EQUIPE',
+  'AX SERVIÇO GERAIS','AX SERVIÇO GERAIS LÍDER DE EQUIPE','COORDENADOR','SUPERVISOR'
+];
 function renderValoresFuncaoEvento(){
   if(!gestorUnlocked){
     return lockScreenHtml('O valor pago por função neste evento só fica visível para o gestor.');
@@ -1124,25 +1134,38 @@ function renderValoresFuncaoEvento(){
     <div class="add-row">
       <button class="btn btn-amber" id="btnNewFuncaoEvento">+ Nova função para este evento</button>
     </div>
-    ${lista.length ? lista.map(f=>`
+    ${lista.length ? lista.map(f=>{
+      const semValor = f.valorDia===null || f.valorDia===undefined || f.valorDia==='' || isNaN(parseFloat(f.valorDia));
+      return `
       <div class="client-card" data-funcao="${escapeHtml(f.funcao)}">
-        <div class="main"><div class="nome">${escapeHtml(f.funcao)}</div><div class="meta">${brl(parseFloat(f.valorDia)||0)} por dia trabalhado</div></div>
+        <div class="main"><div class="nome">${escapeHtml(f.funcao)}</div><div class="meta">${semValor ? 'Sem valor definido — preencha para ativar esta função neste evento' : brl(parseFloat(f.valorDia))+' por dia trabalhado'}</div></div>
         <button class="btn btn-ghost btn-sm btn-edit-funcao-evento">Editar</button>
         <button class="btn btn-danger btn-sm btn-del-funcao-evento">Excluir</button>
-      </div>`).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função (ex: Vigilante, Porteiro) para o cálculo automático funcionar neste evento.</div>`}
+      </div>`;
+    }).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função (ex: Vigilante, Porteiro) para o cálculo automático funcionar neste evento.</div>`}
   `;
 }
 function openFuncaoEventoForm(existing){
   const ev = currentEvent();
   const funcao=prompt('Nome da função (ex: Vigilante):', existing?existing.funcao:'');
   if(funcao===null) return;
-  const valorDia=prompt(`Valor pago por dia trabalhado nessa função, só em "${ev.evento}" (R$):`, existing?existing.valorDia:'');
+  const valorDia=prompt(`Valor pago por dia trabalhado nessa função, só em "${ev.evento}" (R$):`, existing&&existing.valorDia!=null?existing.valorDia:'');
   if(valorDia===null) return;
   if(!funcao.trim() || isNaN(parseFloat(valorDia))){ showToast('Informe a função e um valor numérico.'); return; }
+  const funcaoNormalizada=funcao.trim().toUpperCase();
   (async ()=>{
     if(!ev.valoresFuncao) ev.valoresFuncao=[];
-    if(existing){ existing.funcao=funcao.trim(); existing.valorDia=parseFloat(valorDia); }
-    else ev.valoresFuncao.push({funcao:funcao.trim(), valorDia:parseFloat(valorDia)});
+    if(existing){
+      existing.funcao=funcaoNormalizada; existing.valorDia=parseFloat(valorDia);
+    } else {
+      /* Normaliza para CAIXA ALTA e evita duplicidade (comparação sem
+         diferenciar maiúsculas/minúsculas) antes de adicionar uma
+         função nova — cobre tanto as 12 funções padrão quanto
+         qualquer outra que o gestor cadastre manualmente. */
+      const jaExiste=ev.valoresFuncao.some(f=>f.funcao.trim().toUpperCase()===funcaoNormalizada);
+      if(jaExiste){ showToast('Essa função já está cadastrada neste evento.'); return; }
+      ev.valoresFuncao.push({funcao:funcaoNormalizada, valorDia:parseFloat(valorDia)});
+    }
     await saveEvents();
     renderShell();
     showToast('Valor da função salvo para este evento.');
@@ -1294,7 +1317,8 @@ if(linkValidoAte===undefined) return;
       dataFim:dataFim,
       horaFim:horaFim.trim(),
       linkValidoAte:linkValidoAte,
-      status:'aberto'
+      status:'aberto',
+      valoresFuncao: FUNCOES_PADRAO_NOVO_EVENTO.map(f=>({funcao:f, valorDia:null}))
     });
   }
 
