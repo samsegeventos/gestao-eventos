@@ -149,11 +149,20 @@
   tbody tr:last-child td{border-bottom:none;}
 
   /* ---- Fechamento Financeiro: visão "Por datas" (tela = impressão) ---- */
-  .tabela-fechamento-datas{font-size:12.5px; font-weight:400;}
-  .tabela-fechamento-datas thead th{background:#2a2a2a; color:#fff; font-weight:600; white-space:nowrap;}
-  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:2px solid #333; white-space:nowrap;}
+  .tabela-fechamento-datas{font-size:12.5px; font-weight:400; border-collapse:collapse; width:100%;}
+  .tabela-fechamento-datas thead{display:table-header-group;} /* repete o cabeçalho em cada página impressa */
+  .tabela-fechamento-datas thead th{background:#2a2a2a; color:#fff; font-weight:600; white-space:nowrap; padding:8px 10px;}
+  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:2px solid #333; white-space:nowrap; padding:8px 10px;}
   .tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #333;}
-  .tabela-fechamento-datas .col-assinatura{min-width:260px;}
+  .tabela-fechamento-datas tbody tr{page-break-inside:avoid;}
+  .tabela-fechamento-datas .col-assinatura{min-width:220px;}
+  .tabela-fechamento-datas .col-data-manual{min-width:80px;}
+  /* Colunas de data: o mais estreitas possível, sem perder alinhamento
+     nem cortar "180 (10h)" — cada uma é uma <th>/<td> própria, dentro
+     da MESMA tabela, então a largura fica automaticamente uniforme e
+     alinhada entre cabeçalho e valores. */
+  .tabela-fechamento-datas th.col-dia,.tabela-fechamento-datas td.col-dia{padding:8px 4px; text-align:center;}
+  .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#1a1a1a; text-align:center; font-size:13px; line-height:1.5; padding:6px 10px;}
   .folha-fechamento{margin-bottom:32px;}
   td input[type="time"],td input[type="date"],td input[type="number"],td input[type="text"]{width:100%; min-width:90px;}
 
@@ -214,6 +223,7 @@
     thead th,tbody td{border-color:#ccc;}
     .totals .value{color:#000;}
     .tabela-fechamento-datas thead th{background:#333 !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#111 !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #000 !important;}
     .folha-fechamento{page-break-after:always; margin-bottom:0;}
     .folha-fechamento:last-child{page-break-after:auto;}
@@ -238,7 +248,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 15:45';
+const APP_VERSION = '26/08/2026 16:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2087,6 +2097,18 @@ function numeroPlano(v){
   const n=Number(v)||0;
   return Number.isInteger(n) ? String(n) : n.toFixed(2).replace('.',',');
 }
+function periodoImpressao(ev){
+  /* Formato específico para o cabeçalho de impressão: "DD/MM/AAAA A
+     DD/MM/AAAA" (ou só uma data, se o evento for de um dia só) —
+     mesma fonte de dados que já existe (ev.data/ev.dataFim), sem
+     inventar nada. formatPeriodo() já existe mas usa "–" em vez de
+     "A"; mantive as duas funções separadas para não alterar o que já
+     usa formatPeriodo() em outro lugar. */
+  if(!ev) return '';
+  if(ev.dataFim && ev.dataFim!==ev.data) return `${formatDate(ev.data)} A ${formatDate(ev.dataFim)}`;
+  return formatDate(ev.data);
+}
+function formatDiaMes(iso){ if(!iso) return ''; const [,m,d]=iso.split('-'); return `${d}/${m}`; }
 function renderFechamentoPorDatas(){
   /* Visão só de apresentação/impressão — usa exatamente os mesmos
      dados já carregados (fechamentoDados, presencasNovas, eventoDias),
@@ -2095,36 +2117,49 @@ function renderFechamentoPorDatas(){
      dia em que ele trabalhou, segundo o registro real do Checkout),
      seguido das horas adicionais daquele dia específico, se houver. */
   if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
+  const ev=currentEvent();
   const ehVigilante=f=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao))==='VIGILANTE';
   const vigilantes=fechamentoDados.filter(ehVigilante);
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
-  const colspanDatas=2+eventoDias.length+4+1; // Colaborador+Função/Valor + 1 por dia + Valor Total/Adic./Desc./Total + Assinatura
-  const gerarTabela=(lista)=>{
+  // Nº + Colaborador + Função + 1 por dia + Dias + Valor Total/Adic./Desc./Total + Assinatura + Data
+  const colspanDatas=3+eventoDias.length+4+2;
+  const cabecalhoRepetido=(tituloFolha)=>`
+    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">${escapeHtml(nomeExibicao(ev.evento))}<br>${escapeHtml(periodoImpressao(ev))}</th></tr>
+    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">FECHAMENTO FINANCEIRO — POR DATAS${tituloFolha?' · '+escapeHtml(tituloFolha.toUpperCase()):''}</th></tr>`;
+  const gerarTabela=(lista, tituloFolha)=>{
     const grupos=agruparPorFuncaoPrincipal(lista, f=>f.funcao, f=>f.nome);
     return `
     <table class="tabela-fechamento-datas">
-      <thead><tr>
-        <th>Colaborador</th>
-        <th>Função / Valor</th>
-        ${eventoDias.map(d=>`<th>${formatDate(d.data)} ${DIAS_SEMANA_ABREV[new Date(d.data+'T00:00:00').getDay()]}</th>`).join('')}
-        <th>Valor Total</th><th>Adic.</th><th>Desc.</th><th>Total</th><th class="col-assinatura">Assinatura</th>
-      </tr></thead>
+      <thead>
+        ${cabecalhoRepetido(tituloFolha)}
+        <tr>
+          <th>Nº</th>
+          <th>Colaborador</th>
+          <th>Função</th>
+          ${eventoDias.map(d=>`<th class="col-dia">${formatDiaMes(d.data)}</th>`).join('')}
+          <th>Dias</th>
+          <th>Valor Total</th><th>Adic.</th><th>Desc.</th><th>Total</th><th class="col-assinatura">Assinatura</th><th class="col-data-manual">Data</th>
+        </tr>
+      </thead>
       <tbody>
-        ${linhasComTituloDeGrupo(grupos, colspanDatas, (f)=>`
+        ${linhasComTituloDeGrupo(grupos, colspanDatas, (f,numero)=>`
           <tr>
+            <td>${numero}</td>
             <td>${escapeHtml(nomeExibicao(f.nome))}</td>
-            <td>${escapeHtml(f.funcao)} / ${f.valor_diaria!=null?numeroPlano(f.valor_diaria):'—'}</td>
+            <td>${escapeHtml(f.funcao)}</td>
             ${eventoDias.map(d=>{
               const pr=presencaDoDia(f.participacao_id, d.id);
-              if(!pr || !pr.entrada_ts) return `<td></td>`;
+              if(!pr || !pr.entrada_ts) return `<td class="col-dia">-</td>`;
               const he=horasExtraDe(pr);
-              return `<td>${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
+              return `<td class="col-dia">${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
             }).join('')}
+            <td>${f.dias_trabalhados}</td>
             <td>${brl(f.valor_base)}</td>
             <td>${brl(f.valor_excedente)}</td>
             <td>${brl(f.desconto)}</td>
             <td>${brl(f.total_receber)}</td>
             <td class="col-assinatura"></td>
+            <td class="col-data-manual"></td>
           </tr>`)}
       </tbody>
     </table>`;
@@ -2140,12 +2175,15 @@ function renderFechamentoPorDatas(){
   const qtdGeral=linhasResumo.reduce((s,g)=>s+g.qtd,0);
   return `
     <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
-    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">Vigilantes</div>${gerarTabela(vigilantes)}</div>` : ''}
-    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">Demais Funções</div>${gerarTabela(demais)}</div>` : ''}
+    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">Vigilantes</div>${gerarTabela(vigilantes,'Vigilantes')}</div>` : ''}
+    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">Demais Funções</div>${gerarTabela(demais,'Demais Funções')}</div>` : ''}
     <div class="folha-fechamento">
       <div class="card-title">Resumo para o Diretor</div>
       <table class="tabela-fechamento-datas">
-        <thead><tr><th>Função</th><th>Nº de colaboradores</th><th>Total a pagar</th></tr></thead>
+        <thead>
+          ${cabecalhoRepetido('Resumo para o Diretor')}
+          <tr><th>Função</th><th>Nº de colaboradores</th><th>Total a pagar</th></tr>
+        </thead>
         <tbody>
           ${linhasResumo.map(g=>`<tr><td>${escapeHtml(g.funcao)}</td><td>${g.qtd}</td><td>${brl(g.total)}</td></tr>`).join('')}
           <tr><td>TOTAL GERAL</td><td>${qtdGeral}</td><td>${brl(totalGeral)}</td></tr>
