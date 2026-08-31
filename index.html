@@ -148,21 +148,26 @@
   tbody tr:hover{background:rgba(255,255,255,0.02);}
   tbody tr:last-child td{border-bottom:none;}
 
-  /* ---- Fechamento Financeiro: visão "Por datas" (tela = impressão) ---- */
-  .tabela-fechamento-datas{font-size:12.5px; font-weight:400; border-collapse:collapse; width:100%;}
+  /* ---- Fechamento Financeiro: visão "Por datas" (tela = impressão) ----
+     Visual claro/suave: cabeçalhos cinza claro, linhas finas entre
+     colaboradores, sem bordas pesadas/escuras. table-layout:fixed +
+     colgroup (definido em JS, por linha) garante que a largura de
+     cada coluna é sempre a mesma, mesmo com muitos dias — não
+     depende do conteúdo de cada linha para calcular a largura. */
+  .tabela-fechamento-datas{font-size:12.5px; font-weight:400; border-collapse:collapse; width:100%; table-layout:fixed;}
   .tabela-fechamento-datas thead{display:table-header-group;} /* repete o cabeçalho em cada página impressa */
-  .tabela-fechamento-datas thead th{background:#2a2a2a; color:#fff; font-weight:600; white-space:nowrap; padding:8px 10px;}
-  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:2px solid #333; white-space:nowrap; padding:8px 10px;}
-  .tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #333;}
+  .tabela-fechamento-datas thead th{background:#f0f0f0; color:#333; font-weight:600; white-space:nowrap; padding:7px 8px; overflow:hidden; text-overflow:ellipsis;}
+  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:1px solid #ddd; white-space:nowrap; padding:7px 8px; overflow:hidden; text-overflow:ellipsis;}
+  .tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #ddd;}
   .tabela-fechamento-datas tbody tr{page-break-inside:avoid;}
-  .tabela-fechamento-datas .col-assinatura{min-width:220px;}
-  .tabela-fechamento-datas .col-data-manual{min-width:80px;}
+  .tabela-fechamento-datas .col-assinatura{border-left:1px solid #ddd;}
+  .tabela-fechamento-datas .col-data-manual{border-left:1px solid #ddd;}
   /* Colunas de data: o mais estreitas possível, sem perder alinhamento
      nem cortar "180 (10h)" — cada uma é uma <th>/<td> própria, dentro
      da MESMA tabela, então a largura fica automaticamente uniforme e
      alinhada entre cabeçalho e valores. */
-  .tabela-fechamento-datas th.col-dia,.tabela-fechamento-datas td.col-dia{padding:8px 4px; text-align:center;}
-  .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#1a1a1a; text-align:center; font-size:13px; line-height:1.5; padding:6px 10px;}
+  .tabela-fechamento-datas th.col-dia,.tabela-fechamento-datas td.col-dia{padding:7px 3px; text-align:center;}
+  .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#fafafa; color:#333; text-align:left; font-size:13px; font-weight:700; line-height:1.4; padding:8px 10px; border-bottom:1px solid #ccc;}
   .folha-fechamento{margin-bottom:32px;}
   td input[type="time"],td input[type="date"],td input[type="number"],td input[type="text"]{width:100%; min-width:90px;}
 
@@ -222,9 +227,10 @@
     table{color:#000;}
     thead th,tbody td{border-color:#ccc;}
     .totals .value{color:#000;}
-    .tabela-fechamento-datas thead th{background:#333 !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
-    .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#111 !important; color:#fff !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
-    .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:2px solid #000 !important;}
+    .tabela-fechamento-datas thead th{background:#f0f0f0 !important; color:#333 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#fafafa !important; color:#333 !important; border-bottom:1px solid #ccc !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #ccc !important;}
+    .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
     .folha-fechamento{page-break-after:always; margin-bottom:0;}
     .folha-fechamento:last-child{page-break-after:auto;}
   }
@@ -248,7 +254,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 16:30';
+const APP_VERSION = '26/08/2026 17:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -538,6 +544,17 @@ function calcHoras(entrada,saida){ if(!entrada||!saida) return 0; const [eh,em]=
 function getFuncaoRateForEvent(ev, funcao){ if(!ev || !ev.valoresFuncao) return 0; const f=ev.valoresFuncao.find(t=>t.funcao.toLowerCase()===(funcao||'').toLowerCase()); return f ? (parseFloat(f.valorDia)||0) : 0; }
 function calcValor(c, ev){ if(!c.compareceu) return 0; const dias=parseFloat(c.diasTrabalhados)||0; return getFuncaoRateForEvent(ev, c.funcao)*dias; }
 function brl(n){ return 'R$ '+(n||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+/* Helper central: usado só em Adicional/Desconto (nunca em Valor
+   Total/Total a receber, que sempre são o ganho real). Não altera
+   nenhum valor salvo — é só o que aparece na tela/impressão quando o
+   número é 0 (sem lançamento) ou null/vazio. Mesma regra em toda
+   parte que usa este helper, para tela e impressão nunca divergirem. */
+function valorOuTraco(v){
+  if(v===null || v===undefined || v==='') return '-';
+  const n=Number(v);
+  if(isNaN(n) || n===0) return '-';
+  return brl(n);
+}
 function maskValor(n){ return gestorUnlocked ? brl(n) : '•••••'; }
 function eventLink(id){ return `${location.origin}${location.pathname}?evento=${id}&modo=interesse`; }
 function eventLinkStatus(id){ return `${location.origin}${location.pathname}?evento=${id}&modo=status`; }
@@ -2007,7 +2024,6 @@ function renderFechamentoNovo(){
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem colaboradores com dias trabalhados</b>O fechamento só mostra quem já teve entrada e saída registradas.</div>`;
   return `
     <div class="card-title">Fechamento financeiro</div>
-    <div class="card-sub">Valores calculados a partir de dias trabalhados (checkout), horas adicionais (R$10,00/h) e desconto manual. Horas trabalhadas são informativas.</div>
     <div style="margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm ${fechamentoVisao==='colaborador'?'active':''}" id="btnVisaoColaborador" style="${fechamentoVisao==='colaborador'?'background:var(--accent-soft);':''}">Por colaborador</button>
       <button class="btn btn-ghost btn-sm ${fechamentoVisao==='funcao'?'active':''}" id="btnVisaoFuncao" style="${fechamentoVisao==='funcao'?'background:var(--accent-soft);':''}">Resumo por função</button>
@@ -2029,7 +2045,7 @@ function renderFechamentoNovo(){
             <td class="mono">${f.valor_diaria!=null?brl(f.valor_diaria):'sem valor cadastrado'}</td>
             <td class="mono">${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
             <td class="mono">${f.horas_extras}h</td>
-            <td class="mono">${brl(f.valor_excedente)}</td>
+            <td class="mono">${valorOuTraco(f.valor_excedente)}</td>
             <td class="mono"><input type="number" class="f-desconto" min="0" step="0.01" value="${f.desconto}" style="width:90px;"></td>
             <td class="mono" style="${f.total_receber<0?'color:var(--red);':''}">${brl(f.total_receber)}</td>
             <td><button class="btn btn-amber btn-sm btn-recalcular">Recalcular</button></td>
@@ -2073,8 +2089,8 @@ function renderResumoPorFuncao(){
             <td class="mono">${l.colaboradores}</td>
             <td class="mono">${l.diasTrabalhados}</td>
             <td class="mono">${brl(l.valorTotal)}</td>
-            <td class="mono">${brl(l.valorAdicional)}</td>
-            <td class="mono">${brl(l.desconto)}</td>
+            <td class="mono">${valorOuTraco(l.valorAdicional)}</td>
+            <td class="mono">${valorOuTraco(l.desconto)}</td>
             <td class="mono">${brl(l.total)}</td>
           </tr>`).join('')}
       </tbody>
@@ -2084,8 +2100,8 @@ function renderResumoPorFuncao(){
           <td class="mono">${totais.colaboradores}</td>
           <td class="mono">${totais.diasTrabalhados}</td>
           <td class="mono">${brl(totais.valorTotal)}</td>
-          <td class="mono">${brl(totais.valorAdicional)}</td>
-          <td class="mono">${brl(totais.desconto)}</td>
+          <td class="mono">${valorOuTraco(totais.valorAdicional)}</td>
+          <td class="mono">${valorOuTraco(totais.desconto)}</td>
           <td class="mono">${brl(totais.total)}</td>
         </tr>
       </tfoot>
@@ -2108,6 +2124,14 @@ function periodoImpressao(ev){
   if(ev.dataFim && ev.dataFim!==ev.data) return `${formatDate(ev.data)} A ${formatDate(ev.dataFim)}`;
   return formatDate(ev.data);
 }
+const MESES_PT = ['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+function mesReferencia(ev){
+  /* Sempre a partir da PRIMEIRA data do evento (ev.data), nunca da
+     última — mesmo que o evento cruze a virada do mês/ano. */
+  if(!ev || !ev.data) return '';
+  const [y,m]=ev.data.split('-');
+  return `${MESES_PT[Number(m)-1]}/${y}`;
+}
 function formatDiaMes(iso){ if(!iso) return ''; const [,m,d]=iso.split('-'); return `${d}/${m}`; }
 function renderFechamentoPorDatas(){
   /* Visão só de apresentação/impressão — usa exatamente os mesmos
@@ -2123,15 +2147,38 @@ function renderFechamentoPorDatas(){
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
   // Nº + Colaborador + Função + 1 por dia + Dias + Valor Total/Adic./Desc./Total + Assinatura + Data
   const colspanDatas=3+eventoDias.length+4+2;
-  const cabecalhoRepetido=(tituloFolha)=>`
-    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">${escapeHtml(nomeExibicao(ev.evento))}<br>${escapeHtml(periodoImpressao(ev))}</th></tr>
-    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">FECHAMENTO FINANCEIRO — POR DATAS${tituloFolha?' · '+escapeHtml(tituloFolha.toUpperCase()):''}</th></tr>`;
-  const gerarTabela=(lista, tituloFolha)=>{
+  /* Cabeçalho único, repetido em cada página impressa (thead nativo).
+     Nome do evento + período na mesma linha; mês de referência no
+     canto direito — sem segunda linha de título abaixo. */
+  const cabecalhoRepetido=()=>`
+    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
+      <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+        <span>${escapeHtml(nomeExibicao(ev.evento))} — ${escapeHtml(periodoImpressao(ev))}</span>
+        <span>${escapeHtml(mesReferencia(ev))}</span>
+      </div>
+    </th></tr>`;
+  /* colgroup + table-layout:fixed: garante que a largura de cada
+     coluna é a MESMA sempre, em qualquer bloco/folha e com qualquer
+     quantidade de dias — não depende do conteúdo de cada linha para
+     calcular largura, que era a causa do desalinhamento em eventos
+     com muitos dias. */
+  const colgroup=(()=>{
+    const fixas=[['2.2%'],['12%'],['10%'],['4%'],['7%'],['6%'],['6%'],['7%'],['13%'],['6%']]; // Nº,Colaborador,Função,Dias,ValorTotal,Adic,Desc,Total,Assinatura,Data
+    const somaFixas=2.2+12+10+4+7+6+6+7+13+6;
+    const larguraDia=eventoDias.length ? ((100-somaFixas)/eventoDias.length).toFixed(2)+'%' : '3%';
+    return `<colgroup>
+      <col style="width:${fixas[0][0]}"><col style="width:${fixas[1][0]}"><col style="width:${fixas[2][0]}">
+      ${eventoDias.map(()=>`<col style="width:${larguraDia}">`).join('')}
+      <col style="width:${fixas[3][0]}"><col style="width:${fixas[4][0]}"><col style="width:${fixas[5][0]}"><col style="width:${fixas[6][0]}"><col style="width:${fixas[7][0]}"><col style="width:${fixas[8][0]}"><col style="width:${fixas[9][0]}">
+    </colgroup>`;
+  })();
+  const gerarTabela=(lista)=>{
     const grupos=agruparPorFuncaoPrincipal(lista, f=>f.funcao, f=>f.nome);
     return `
     <table class="tabela-fechamento-datas">
+      ${colgroup}
       <thead>
-        ${cabecalhoRepetido(tituloFolha)}
+        ${cabecalhoRepetido()}
         <tr>
           <th>Nº</th>
           <th>Colaborador</th>
@@ -2155,8 +2202,8 @@ function renderFechamentoPorDatas(){
             }).join('')}
             <td>${f.dias_trabalhados}</td>
             <td>${brl(f.valor_base)}</td>
-            <td>${brl(f.valor_excedente)}</td>
-            <td>${brl(f.desconto)}</td>
+            <td>${valorOuTraco(f.valor_excedente)}</td>
+            <td>${valorOuTraco(f.desconto)}</td>
             <td>${brl(f.total_receber)}</td>
             <td class="col-assinatura"></td>
             <td class="col-data-manual"></td>
@@ -2164,24 +2211,34 @@ function renderFechamentoPorDatas(){
       </tbody>
     </table>`;
   };
-  /* Resumo do Diretor: líder soma junto com a função principal, como
-     pedido explicitamente nesta rodada — usa a mesma regra de
-     agrupamento das demais telas (base + líder no mesmo bloco). */
-  const gruposDiretor=agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome);
-  const linhasResumo=gruposDiretor.map(g=>({
+  /* Resumo Presidência: líder soma junto com a função principal, como
+     já pedido antes — usa a mesma regra de agrupamento das demais
+     telas (base + líder no mesmo bloco). */
+  const gruposPresidencia=agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome);
+  const linhasResumo=gruposPresidencia.map(g=>({
     funcao:g.funcao, qtd:g.itens.length, total:g.itens.reduce((s,f)=>s+(f.total_receber||0),0)
   }));
   const totalGeral=linhasResumo.reduce((s,g)=>s+g.total,0);
   const qtdGeral=linhasResumo.reduce((s,g)=>s+g.qtd,0);
+  /* "Demais Funções" some — o título da folha agora lista as funções
+     principais realmente presentes ali (nomes reais, líder já incluso
+     no bloco da função base, sem repetir "líder de equipe" separado). */
+  const nomesFuncoesDemais=agruparPorFuncaoPrincipal(demais, f=>f.funcao, f=>f.nome).map(g=>g.funcao).join(', ');
   return `
     <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
-    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">Vigilantes</div>${gerarTabela(vigilantes,'Vigilantes')}</div>` : ''}
-    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">Demais Funções</div>${gerarTabela(demais,'Demais Funções')}</div>` : ''}
+    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">Vigilantes</div>${gerarTabela(vigilantes)}</div>` : ''}
+    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">${escapeHtml(nomesFuncoesDemais)}</div>${gerarTabela(demais)}</div>` : ''}
     <div class="folha-fechamento">
-      <div class="card-title">Resumo para o Diretor</div>
+      <div class="card-title">Resumo Presidência</div>
       <table class="tabela-fechamento-datas">
+        <colgroup><col style="width:50%"><col style="width:25%"><col style="width:25%"></colgroup>
         <thead>
-          ${cabecalhoRepetido('Resumo para o Diretor')}
+          <tr class="linha-cabecalho-impressao"><th colspan="3">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
+              <span>${escapeHtml(nomeExibicao(ev.evento))} — ${escapeHtml(periodoImpressao(ev))}</span>
+              <span>${escapeHtml(mesReferencia(ev))}</span>
+            </div>
+          </th></tr>
           <tr><th>Função</th><th>Nº de colaboradores</th><th>Total a pagar</th></tr>
         </thead>
         <tbody>
