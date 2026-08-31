@@ -238,7 +238,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 14:35';
+const APP_VERSION = '26/08/2026 15:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -337,6 +337,21 @@ async function sSet(key,value){
 function uid(){ return Math.random().toString(36).slice(2,9); }
 function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2600); }
 function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+/* Exibição do nome do colaborador sempre em CAIXA ALTA — só na tela,
+   nunca altera o dado gravado. Não usar para identificar/comparar
+   colaboradores (isso continua por CPF/ID, nunca pelo nome). */
+function nomeExibicao(n){ return String(n||'').trim().toUpperCase(); }
+/* Verifica se um CPF já tem alguma informação operacional vinculada
+   ao evento (Pré-Escala, Escala Oficial) — usa os mesmos arrays já
+   carregados (interessados/staff), comparando CPF normalizado (só
+   dígitos) para não depender de formatação. Se houver vínculo, a
+   exclusão definitiva do cadastro é bloqueada — só Desautorizar. */
+function temVinculoOperacional(cpf){
+  const cpfNorm=String(cpf||'').replace(/\D/g,'');
+  const emInteressados=interessados.some(i=>String(i.cpf||'').replace(/\D/g,'')===cpfNorm);
+  const emStaff=staff.some(s=>String(s.cpf||'').replace(/\D/g,'')===cpfNorm);
+  return emInteressados || emStaff;
+}
 function formatDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function formatPeriodo(e){ if(!e) return '—'; if(e.dataFim && e.dataFim!==e.data) return `${formatDate(e.data)} – ${formatDate(e.dataFim)}`; return formatDate(e.data); }
 function todayISO(){
@@ -839,9 +854,17 @@ function renderPublic(alreadySent){
 
       const intTelefoneEl=document.getElementById('intTelefone');
       intTelefoneEl.oninput=()=>maskTelefoneInput(intTelefoneEl);
+      const intNomeEl=document.getElementById('intNome');
+      /* Nome do colaborador sempre em CAIXA ALTA — convertido enquanto
+         digita, preservando a posição do cursor. */
+      intNomeEl.oninput=()=>{
+        const pos=intNomeEl.selectionStart;
+        intNomeEl.value=intNomeEl.value.toUpperCase();
+        intNomeEl.setSelectionRange(pos,pos);
+      };
 
       document.getElementById('btnConfirmarParticipacao').onclick=async ()=>{
-        const nome=document.getElementById('intNome').value.trim();
+        const nome=nomeExibicao(document.getElementById('intNome').value);
         const telefoneDigits=document.getElementById('intTelefone').value.replace(/\D/g,'');
         const erroBox=document.getElementById('erroParticipacao');
         const btnConfirmar=document.getElementById('btnConfirmarParticipacao');
@@ -1627,7 +1650,7 @@ function renderPreEscala(){
           <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
           ${g.itens.map((p,i)=>`
             <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
+              <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
               <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
               <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
             </div>`).join('')}
@@ -1642,7 +1665,7 @@ function renderPreEscala(){
           <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
           ${g.itens.map((p,i)=>`
             <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(p.nome)} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+              <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
               <span class="badge ${p.status==='aprovado'?'pago':'pendente'}" style="${p.status==='recusado'?'color:var(--red); border-color:var(--red);':''}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span>
             </div>`).join('')}
         `).join('')}
@@ -1678,7 +1701,7 @@ function renderEscalaOficial(){
             ${linhasComTituloDeGrupo(grupos, 7, (c,numero)=>`
               <tr data-id="${c.id}">
                 <td class="mono">${numero}</td>
-                <td>${escapeHtml(c.nome)}</td>
+                <td>${escapeHtml(nomeExibicao(c.nome))}</td>
                 <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
                 <td class="mono">${escapeHtml(c.cpf||'—')}</td>
                 <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
@@ -1703,7 +1726,7 @@ function renderPresencaTab(){
       <tbody>
         ${escalados.map(c=>{ return `
           <tr data-id="${c.id}">
-            <td>${escapeHtml(c.nome)}</td>
+            <td>${escapeHtml(nomeExibicao(c.nome))}</td>
             <td><span class="stamp ${c.compareceu?'on':'off'} stamp-toggle" style="cursor:pointer;">${c.compareceu?'✓ Presente':'Ausente'}</span></td>
             <td><input type="date" class="f-data" value="${c.data||''}" ${c.compareceu?'':'disabled'}></td>
             <td><input type="time" class="f-entrada" value="${c.entrada||''}" ${c.compareceu?'':'disabled'}></td>
@@ -1739,7 +1762,7 @@ function renderAprovacaoGestor(){
       <thead><tr><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas adicionais</th><th>Total a receber</th></tr></thead>
       <tbody>
         ${fechamentoDados.map(f=>`<tr>
-          <td>${escapeHtml(f.nome)}</td><td>${escapeHtml(f.funcao||'—')}</td>
+          <td>${escapeHtml(nomeExibicao(f.nome))}</td><td>${escapeHtml(f.funcao||'—')}</td>
           <td class="mono">${f.dias_trabalhados}</td><td class="mono">${f.horas_extras}h</td>
           <td class="mono">${brl(f.total_receber)}</td></tr>`).join('')}
       </tbody>
@@ -1796,7 +1819,7 @@ function renderEscalaHorarioDias(){
             ${linhasComTituloDeGrupo(grupos, colspanEscala, (p,numero)=>`
               <tr data-participacao-id="${pid(p)}">
                 <td class="mono">${numero}</td>
-                <td>${escapeHtml(p.nome)}</td>
+                <td>${escapeHtml(nomeExibicao(p.nome))}</td>
                 ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
               </tr>`)}
           </tbody>
@@ -1874,7 +1897,7 @@ function renderCheckoutDias(){
               const temSaida=pr && pr.saida_ts;
               return `<tr data-participacao-id="${pid(p)}">
                 <td class="mono">${numero}</td>
-                <td>${escapeHtml(p.nome)}</td>
+                <td>${escapeHtml(nomeExibicao(p.nome))}</td>
                 <td>${escapeHtml(p.funcao||'—')}</td>
                 <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
                 <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
@@ -1989,7 +2012,7 @@ function renderFechamentoNovo(){
           const horas=Math.floor((f.horas_trabalhadas_minutos||0)/60), mins=(f.horas_trabalhadas_minutos||0)%60;
           return `<tr data-participacao-id="${f.participacao_id}">
             <td class="mono">${numero}</td>
-            <td>${escapeHtml(f.nome)}</td>
+            <td>${escapeHtml(nomeExibicao(f.nome))}</td>
             <td>${escapeHtml(f.funcao)}</td>
             <td class="mono">${f.dias_trabalhados}</td>
             <td class="mono">${horas}h${String(mins).padStart(2,'0')}</td>
@@ -2089,7 +2112,7 @@ function renderFechamentoPorDatas(){
       <tbody>
         ${linhasComTituloDeGrupo(grupos, colspanDatas, (f)=>`
           <tr>
-            <td>${escapeHtml(f.nome)}</td>
+            <td>${escapeHtml(nomeExibicao(f.nome))}</td>
             <td>${escapeHtml(f.funcao)} / ${f.valor_diaria!=null?numeroPlano(f.valor_diaria):'—'}</td>
             ${eventoDias.map(d=>{
               const pr=presencaDoDia(f.participacao_id, d.id);
@@ -2200,7 +2223,7 @@ function renderCpfsAutorizadosLista(lista){
           <tr data-cpf="${c.cpf}">
             <td class="mono">${numero}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
-            <td>${escapeHtml(c.nome||'—')}</td>
+            <td>${escapeHtml(nomeExibicao(c.nome)||'—')}</td>
             <td>${escapeHtml(c.funcao||'—')}</td>
             <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
             <td>
@@ -2208,6 +2231,7 @@ function renderCpfsAutorizadosLista(lista){
               ${c.autorizado
                 ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
                 : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
+              <button class="btn btn-danger btn-sm btn-excluir-cpf-aut">Excluir cadastro</button>
             </td>
           </tr>`)}
       </tbody>
@@ -2243,6 +2267,12 @@ function renderCpfsAutorizadosTab(){
 function attachCpfsAutorizadosHandlers(){
   const cpfInp=document.getElementById('novoCpfAut');
   if(cpfInp) cpfInp.oninput=(e)=>maskCpfInput(e.target);
+  const nomeAutInp=document.getElementById('novoNomeAut');
+  if(nomeAutInp) nomeAutInp.oninput=()=>{
+    const pos=nomeAutInp.selectionStart;
+    nomeAutInp.value=nomeAutInp.value.toUpperCase();
+    nomeAutInp.setSelectionRange(pos,pos);
+  };
   const buscaInp=document.getElementById('buscaCpfAutorizado');
   if(buscaInp) buscaInp.oninput=(e)=>{
     // Filtra só em memória e atualiza somente a tabela — nunca recria
@@ -2262,7 +2292,7 @@ function attachCpfsAutorizadosHandlers(){
   const btnAdd=document.getElementById('btnAddCpfAut');
   if(btnAdd) btnAdd.onclick=async ()=>{
     const cpf=document.getElementById('novoCpfAut').value.trim();
-    const nome=document.getElementById('novoNomeAut').value.trim();
+    const nome=nomeExibicao(document.getElementById('novoNomeAut').value);
     /* Se existem funções cadastradas no evento (Valores por Função),
        usa o dropdown com os nomes padronizados — evita "Vigilante"
        vs "VIGILANTE " vs "vigilante" viraram funções diferentes. Só
@@ -2286,12 +2316,16 @@ function attachCpfsAutorizadosRowHandlers(){
     btn.onclick=async ()=>{
       const cpf=btn.closest('tr').dataset.cpf;
       const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
-      const novoNome=prompt('Nome:', atual.nome||'');
-      if(novoNome===null) return;
-      const novaFuncao=prompt('Função:', atual.funcao||'');
+      const novoNomeDigitado=prompt('Nome:', atual.nome||'');
+      if(novoNomeDigitado===null) return;
+      const novoNome=nomeExibicao(novoNomeDigitado);
+      const ev=currentEvent();
+      const funcoesEvento=(ev && ev.valoresFuncao)||[];
+      const dicaFuncoes = funcoesEvento.length ? `\n\nFunções já cadastradas neste evento:\n${funcoesEvento.map(f=>'- '+f.funcao).join('\n')}` : '';
+      const novaFuncao=prompt('Função:'+dicaFuncoes, atual.funcao||'');
       if(novaFuncao===null) return;
       if(!novaFuncao.trim()){ showToast('Função é obrigatória.'); return; }
-      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:novoNome, p_funcao:novaFuncao});
+      const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:novoNome, p_funcao:novaFuncao.trim()});
       if(r.ok){ showToast('Autorização atualizada.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
@@ -2308,6 +2342,19 @@ function attachCpfsAutorizadosRowHandlers(){
       const cpf=btn.closest('tr').dataset.cpf;
       const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:null, p_funcao:null});
       if(r.ok){ showToast('CPF reativado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
+    };
+  });
+  document.querySelectorAll('.btn-excluir-cpf-aut').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const cpf=btn.closest('tr').dataset.cpf;
+      const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
+      if(temVinculoOperacional(cpf)){
+        showToast('Este colaborador já possui informações vinculadas ao evento. Para preservar escalas, checkout e dados financeiros, o cadastro não pode ser excluído diretamente — use Desautorizar.');
+        return;
+      }
+      if(!confirm(`ATENÇÃO!\n\nVocê está prestes a excluir o cadastro:\n\n${nomeExibicao(atual&&atual.nome)||'(sem nome)'}\nCPF: ${formatCpf(cpf)}\n\nEsta ação não pode ser desfeita.`)) return;
+      const r=await chamarRpcGestor('excluir_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf});
+      if(r.ok){ showToast('Cadastro excluído.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
 }
@@ -2377,7 +2424,7 @@ async function renderPagamentos(main){
           ${pendentes.map(r=>`
             <tr data-eventoid="${r.eventoId}" data-staffid="${r.staffId}">
               <td><input type="checkbox" class="chk-pay"></td>
-              <td>${escapeHtml(r.nome)}</td>
+              <td>${escapeHtml(nomeExibicao(r.nome))}</td>
               <td>${escapeHtml(r.evento)}</td>
               <td>${escapeHtml(r.cliente)}</td>
               <td class="mono">${r.data?formatDate(r.data):'—'}</td>
@@ -2392,7 +2439,7 @@ async function renderPagamentos(main){
         <thead><tr><th>Nome</th><th>Evento</th><th>Data do evento</th><th>Valor</th><th>Pago em</th></tr></thead>
         <tbody>
           ${pagos.map(r=>`<tr>
-            <td>${escapeHtml(r.nome)}</td><td>${escapeHtml(r.evento)}</td>
+            <td>${escapeHtml(nomeExibicao(r.nome))}</td><td>${escapeHtml(r.evento)}</td>
             <td class="mono">${r.data?formatDate(r.data):'—'}</td><td class="mono">${brl(r.valor)}</td>
             <td class="mono">${r.dataPagamento?formatDate(r.dataPagamento):'—'}</td></tr>`).join('')}
         </tbody>
