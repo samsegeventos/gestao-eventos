@@ -261,7 +261,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 18:50';
+const APP_VERSION = '26/08/2026 19:20';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -594,7 +594,7 @@ let escalaDias = [];
 let presencasNovas = [];
 let diaSelecionadoPresenca = null;
 let fechamentoVisao = 'colaborador'; // 'colaborador' ou 'funcao' — só estado de exibição, não afeta os dados
-let mostrarFechamentoEventoImpressao = false; // toggle só de exibição, dentro de Aprovação do Gestor
+let aprovacaoVisao = 'gestor'; // 'gestor' ou 'evento' — toggle só de exibição, dentro de Aprovação do Gestor
 let fechamentoDados = [];
 /* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
@@ -1791,22 +1791,27 @@ function renderAprovacaoGestor(){
      ser a fonte real de presença. Por isso ficava sempre vazia. Agora
      usa fechamentoDados, a mesma fonte já usada por "Fechamento
      Financeiro" — nenhum cálculo novo, só reaproveita o que já vem
-     pronto de fechamento_evento(). A impressão da conferência usa a
-     mesma função compartilhada de "FECHAMENTO EVENTO - IMPRESSÃO",
-     só sem a coluna CPF — sem duplicar a lógica em dois lugares. */
+     pronto de fechamento_evento(). As duas visualizações
+     (Gestor/Evento) usam a mesma função compartilhada
+     renderTabelaFechamentoImpressao — sem duplicar a lógica. */
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem dados de fechamento</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
   const total=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
+  const aprovado=ev.status!=='aberto';
   return `
     <div class="card-sub">Confira os valores (calculados a partir do Checkout por Dia) antes de aprovar. Após aprovado, o evento fica disponível em Pagamentos.</div>
-    ${renderTabelaFechamentoImpressao(false)}
+    <div style="margin-bottom:14px;">
+      <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='gestor'?'active':''}" id="btnVisaoFechamentoGestor" style="${aprovacaoVisao==='gestor'?'background:var(--accent-soft);':''}">FECHAMENTO GESTOR / IMPRESSÃO</button>
+      <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='evento'?'active':''}" id="btnVisaoFechamentoEvento" style="${aprovacaoVisao==='evento'?'background:var(--accent-soft);':''}">FECHAMENTO EVENTO / IMPRESSÃO</button>
+    </div>
+    ${aprovacaoVisao==='gestor'
+      ? renderTabelaFechamentoImpressao(false)
+      : (aprovado
+          ? renderTabelaFechamentoImpressao(true)
+          : `<div class="empty"><b>Impressão bloqueada</b>Aprove o fechamento do gestor antes de liberar a impressão do fechamento do evento.</div>`)}
     <div class="totals">
       <div class="item"><div class="label">Colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
       <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(total)}</div></div>
     </div>
-    <div style="margin-top:18px;">
-      <button class="btn btn-ghost btn-sm" id="btnToggleFechamentoEventoImpressao">FECHAMENTO EVENTO - IMPRESSÃO</button>
-    </div>
-    ${mostrarFechamentoEventoImpressao ? `<div style="margin-top:14px;">${renderFechamentoEventoImpressao()}</div>` : ''}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -2226,16 +2231,17 @@ function renderTabelaFechamentoImpressao(mostrarCpf){
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
   // Nome + Função [+ CPF] + 1 por dia + Dias + Valor/Dia + Valor + Adic./Desc./Total + Assinatura + Data
   const colspanDatas=(mostrarCpf?3:2)+eventoDias.length+3+3+2;
-  /* Cabeçalho de DUAS linhas, repetido em cada página impressa (thead
-     nativo, com display:table-header-group): 1) título da folha
-     (VIGILANTES ou GRUPO ANJOS DA PAZ); 2) nome do evento+período à
-     esquerda e mês de referência à direita. Impossível "desaparecer"
-     entre páginas porque faz parte do próprio thead da tabela. */
-  const cabecalhoRepetido=(titulo)=>`
-    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">${escapeHtml(titulo)}</th></tr>
+  /* Cabeçalho de UMA linha só, repetido em cada página impressa
+     (thead nativo, com display:table-header-group): cliente + nome do
+     evento + período à esquerda, mês de referência à direita. Os
+     títulos "VIGILANTES"/"GRUPO ANJOS DA PAZ" NÃO entram mais aqui —
+     ficam só no título de cada seção (fora da tabela), como pedido
+     nesta rodada; o cabeçalho da página começa direto em cliente +
+     evento. */
+  const cabecalhoRepetido=()=>`
     <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
-        <span>${escapeHtml(nomeExibicao(ev.evento))} — ${escapeHtml(periodoImpressao(ev)).toUpperCase()}</span>
+        <span>${ev.cliente?escapeHtml(nomeExibicao(ev.cliente))+' — ':''}${escapeHtml(nomeExibicao(ev.evento))} — ${escapeHtml(periodoImpressao(ev)).toUpperCase()}</span>
         <span>${escapeHtml(mesReferencia(ev))}</span>
       </div>
     </th></tr>`;
@@ -2268,10 +2274,11 @@ function renderTabelaFechamentoImpressao(mostrarCpf){
     const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
     <div class="folha-fechamento">
+    <div class="card-title" style="margin-bottom:6px;">${escapeHtml(titulo)}</div>
     <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
       ${colgroup}
       <thead>
-        ${cabecalhoRepetido(titulo)}
+        ${cabecalhoRepetido()}
         <tr>
           <th class="col-nome">NOME</th>
           <th class="col-func-presidencia">FUNÇÃO</th>
@@ -2314,7 +2321,6 @@ function renderTabelaFechamentoImpressao(mostrarCpf){
     ${demais.length ? gerarTabela(demais,'GRUPO ANJOS DA PAZ') : ''}
   `;
 }
-function renderFechamentoEventoImpressao(){ return renderTabelaFechamentoImpressao(true); }
 function attachFechamentoHandlers(){
   const btnCol=document.getElementById('btnVisaoColaborador');
   const btnFunc=document.getElementById('btnVisaoFuncao');
@@ -2769,8 +2775,10 @@ function attachDetailHandlers(){
   if(btnPrint) btnPrint.onclick=()=>window.print();
   const btnPrintFechamentoEvento=document.getElementById('btnPrintFechamentoEvento');
   if(btnPrintFechamentoEvento) btnPrintFechamentoEvento.onclick=()=>window.print();
-  const btnToggleFechamentoEventoImpressao=document.getElementById('btnToggleFechamentoEventoImpressao');
-  if(btnToggleFechamentoEventoImpressao) btnToggleFechamentoEventoImpressao.onclick=()=>{ mostrarFechamentoEventoImpressao=!mostrarFechamentoEventoImpressao; renderShell(); };
+  const btnVisaoFechamentoGestor=document.getElementById('btnVisaoFechamentoGestor');
+  if(btnVisaoFechamentoGestor) btnVisaoFechamentoGestor.onclick=()=>{ aprovacaoVisao='gestor'; renderShell(); };
+  const btnVisaoFechamentoEvento=document.getElementById('btnVisaoFechamentoEvento');
+  if(btnVisaoFechamentoEvento) btnVisaoFechamentoEvento.onclick=()=>{ aprovacaoVisao='evento'; renderShell(); };
   const btnAprovar=document.getElementById('btnAprovar');
   if(btnAprovar) btnAprovar.onclick=async ()=>{
     if(!confirm('Confirma o fechamento da equipe? Após aprovar, o evento fica disponível na área de Pagamentos.')) return;
