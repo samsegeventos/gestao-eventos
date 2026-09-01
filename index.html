@@ -240,6 +240,17 @@
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
     .folha-fechamento{page-break-after:always; margin-bottom:0;}
     .folha-fechamento:last-child{page-break-after:auto;}
+    /* Compactação só na impressão (nunca na tela) — reduz o quanto for
+       necessário para caber mais linhas por folha antes de precisar de
+       uma nova página. Nunca esconde nem corta informação, só aperta
+       o espaço em volta dela. */
+    .tabela-fechamento-datas tbody tr{height:auto;}
+    .tabela-fechamento-datas thead th{padding:5px 6px;}
+    .tabela-fechamento-datas tbody td{padding:4px 6px;}
+    .tabela-fechamento-datas th.col-dia,.tabela-fechamento-datas td.col-dia{padding:4px 3px;}
+    .linha-titulo-grupo td{padding:5px 6px;}
+    .card-title{margin:0 0 4px;}
+    .totals{margin-top:6px; padding-top:8px;}
   }
   @page{ size: A4 landscape; margin: 10mm; }
 </style>
@@ -261,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 20:40';
+const APP_VERSION = '26/08/2026 21:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2293,7 +2304,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
      navegador ainda permite diminuir a escala de impressão livremente
      por cima disso. */
   const fontePx=Math.max(9, Math.min(11, 11 - Math.max(0, eventoDias.length-8)*0.25)).toFixed(1);
-  const gerarTabela=(lista, titulo, funcaoAgrupamento)=>{
+  const gerarTabela=(lista, titulo, funcaoAgrupamento, conteudoExtra)=>{
     const grupos=(funcaoAgrupamento||agruparPorFuncaoPrincipal)(lista, f=>f.funcao, f=>f.nome);
     const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
@@ -2335,6 +2346,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
           </tr>`, totalGrupo)}
       </tbody>
     </table>
+    ${conteudoExtra||''}
     </div>`;
   };
   if(listagemUnica){
@@ -2343,18 +2355,26 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
        líder forma um grupo PRÓPRIO, logo abaixo da função principal —
        agruparPorFuncaoExataOrdenada() cuida disso; a ordem das
        funções continua a oficial do sistema. Sem quebra de página
-       forçada entre grupos — é uma única <table>, só existe uma
-       folha, que já recebe page-break-after:auto por ser
-       :last-child. O total fica sempre logo após a listagem, sem
-       nenhum page-break-before proposital. */
+       forçada entre grupos — é uma única <table>.
+       IMPORTANTE: o resumo final (.totals) é passado como
+       conteudoExtra para ficar DENTRO do mesmo .folha-fechamento que
+       envolve a tabela — não como elemento irmão depois dela. Isso é
+       o que impede a quebra de página forçada entre a listagem e o
+       resumo: a regra de impressão .folha-fechamento{page-break-after:
+       always} só quebra DEPOIS de todo o bloco (tabela+resumo juntos),
+       nunca entre os dois. Antes, .totals ficava como irmão fora da
+       .folha-fechamento, o que tirava dela a condição de :last-child
+       e reativava a quebra forçada logo após a tabela — exatamente
+       onde não devia. */
     const totalGeral=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
-    return `
-      <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
-      ${gerarTabela(fechamentoDados, null, agruparPorFuncaoExataOrdenada)}
+    const resumoFinal=`
       <div class="totals" style="margin-top:10px; page-break-inside:avoid;">
         <div class="item"><div class="label">Total de colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
         <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(totalGeral)}</div></div>
-      </div>
+      </div>`;
+    return `
+      <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
+      ${gerarTabela(fechamentoDados, null, agruparPorFuncaoExataOrdenada, resumoFinal)}
     `;
   }
   return `
