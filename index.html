@@ -261,7 +261,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 19:55';
+const APP_VERSION = '26/08/2026 20:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1809,13 +1809,14 @@ function renderAprovacaoGestor(){
     </div>
     ${aprovacaoVisao==='gestor'
       ? (aprovado
-          ? renderTabelaFechamentoImpressao(true, true)
+          ? renderTabelaFechamentoImpressao(true, true, false)
           : `<div class="empty"><b>Impressão bloqueada</b>Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor.</div>`)
-      : renderTabelaFechamentoImpressao(false, false)}
+      : renderTabelaFechamentoImpressao(false, false, true)}
+    ${aprovacaoVisao==='gestor' ? `
     <div class="totals">
       <div class="item"><div class="label">Colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
       <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(total)}</div></div>
-    </div>
+    </div>` : ''}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -2218,11 +2219,14 @@ function funcaoParaImpressaoHTML(funcaoReal){
   if(norm.endsWith(sufixo)) return `${escapeHtml(norm.slice(0,-sufixo.length))}<br>LÍDER`;
   return escapeHtml(norm||'—');
 }
-function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData){
+function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, listagemUnica){
   /* Função única compartilhada entre "FECHAMENTO GESTOR / IMPRESSÃO"
-     (mostrarCpf=true, mostrarAssinaturaData=true) e "FECHAMENTO EVENTO
-     PRESIDÊNCIA / IMPRESSÃO" (mostrarCpf=false,
-     mostrarAssinaturaData=false) — mesma estrutura, mesma fonte de
+     (mostrarCpf=true, mostrarAssinaturaData=true, listagemUnica=false
+     — mantém a separação em duas folhas Vigilantes/Grupo Anjos da Paz,
+     sem alteração nesta rodada) e "FECHAMENTO EVENTO PRESIDÊNCIA /
+     IMPRESSÃO" (mostrarCpf=false, mostrarAssinaturaData=false,
+     listagemUnica=true — uma única listagem sequencial, sem separar
+     Vigilantes das demais funções) — mesma estrutura, mesma fonte de
      dados (fechamentoDados, presencasNovas, eventoDias), sem
      recalcular nenhum valor financeiro novo e sem duplicar a lógica
      em dois lugares. O valor de cada dia é só o valor/diária da
@@ -2280,7 +2284,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData){
     const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
     <div class="folha-fechamento">
-    <div class="card-title" style="margin-bottom:6px;">${escapeHtml(titulo)}</div>
+    ${titulo?`<div class="card-title" style="margin-bottom:6px;">${escapeHtml(titulo)}</div>`:''}
     <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
       ${colgroup}
       <thead>
@@ -2319,6 +2323,24 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData){
     </table>
     </div>`;
   };
+  if(listagemUnica){
+    /* Fechamento Evento Presidência: uma única listagem sequencial,
+       sem separar Vigilantes das demais funções — agruparPorFuncaoPrincipal
+       já respeita a ordem oficial (Coordenador, Supervisor, Vigilante,
+       Aux. de Serviços Gerais, Brigadista, Carregador, Porteiro), então
+       a sequência sai correta automaticamente, num só <table> (sem
+       quebra de página forçada entre grupos — só existe uma folha, que
+       já recebe page-break-after:auto por ser :last-child). */
+    const totalGeral=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
+    return `
+      <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
+      ${gerarTabela(fechamentoDados, null)}
+      <div class="totals" style="margin-top:10px;">
+        <div class="item"><div class="label">Número total de colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
+        <div class="item"><div class="label">Total a pagar</div><div class="value">${brl(totalGeral)}</div></div>
+      </div>
+    `;
+  }
   return `
     <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="${mostrarCpf?'btnPrintFechamentoEvento':'btnPrint'}">Imprimir / Exportar PDF</button></div>
     ${vigilantes.length ? gerarTabela(vigilantes,'VIGILANTES') : ''}
