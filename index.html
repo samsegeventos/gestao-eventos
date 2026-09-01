@@ -261,7 +261,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 20:15';
+const APP_VERSION = '26/08/2026 20:40';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1799,10 +1799,8 @@ function renderAprovacaoGestor(){
      status já existente, ev.status) o Fechamento do Gestor (com CPF,
      assinatura e data) fica liberado. */
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem dados de fechamento</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
-  const total=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
   const aprovado=ev.status!=='aberto';
   return `
-    <div class="card-sub">Confira os valores (calculados a partir do Checkout por Dia) antes de aprovar. Após aprovado, o evento fica disponível em Pagamentos.</div>
     <div style="margin-bottom:14px;">
       <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='gestor'?'active':''} ${aprovado?'':'btn-disabled'}" id="btnVisaoFechamentoGestor" ${aprovado?'':'disabled title="Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor."'} style="${aprovacaoVisao==='gestor'?'background:var(--accent-soft);':''}${aprovado?'':'opacity:0.45; cursor:not-allowed;'}">FECHAMENTO GESTOR / IMPRESSÃO</button>
       <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='presidencia'?'active':''}" id="btnVisaoFechamentoPresidencia" style="${aprovacaoVisao==='presidencia'?'background:var(--accent-soft);':''}">FECHAMENTO EVENTO PRESIDÊNCIA / IMPRESSÃO</button>
@@ -1812,11 +1810,6 @@ function renderAprovacaoGestor(){
           ? renderTabelaFechamentoImpressao(true, true, false)
           : `<div class="empty"><b>Impressão bloqueada</b>Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor.</div>`)
       : renderTabelaFechamentoImpressao(false, false, true)}
-    ${aprovacaoVisao==='gestor' ? `
-    <div class="totals">
-      <div class="item"><div class="label">Colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
-      <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(total)}</div></div>
-    </div>` : ''}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -2208,6 +2201,27 @@ function mesReferencia(ev){
   return `${MESES_PT[Number(m)-1]}/${y}`;
 }
 function formatDiaMes(iso){ if(!iso) return ''; const [,m,d]=iso.split('-'); return `${d}/${m}`; }
+function formatDiaSomente(iso){ if(!iso) return ''; const [,,d]=iso.split('-'); return d; }
+function agruparPorFuncaoExataOrdenada(lista, getFuncao, getNome){
+  /* Só para o FECHAMENTO EVENTO PRESIDÊNCIA: aqui o líder forma seu
+     PRÓPRIO grupo, logo abaixo do grupo da função principal — ao
+     contrário da regra usada em todas as outras telas do sistema
+     (onde o líder fica dentro do mesmo grupo). Reaproveita
+     ordenarFuncoesParaPresidencia() (já existente) para a ordem dos
+     grupos — base antes do líder, seguindo a ordem oficial — e
+     abreviarLider() (já existente) para o título do grupo. */
+  const grupos={};
+  lista.forEach(item=>{
+    const norm=normalizaFuncaoDisplay(getFuncao(item)) || 'SEM FUNÇÃO INFORMADA';
+    if(!grupos[norm]) grupos[norm]=[];
+    grupos[norm].push(item);
+  });
+  const chavesOrdenadas=ordenarFuncoesParaPresidencia(Object.keys(grupos));
+  return chavesOrdenadas.map(k=>{
+    const itens=[...grupos[k]].sort((a,b)=>(getNome(a)||'').localeCompare(getNome(b)||'','pt-BR'));
+    return {funcao:abreviarLider(k), itens};
+  });
+}
 function funcaoParaImpressaoHTML(funcaoReal){
   /* Só exibição: função líder quebra em duas linhas ("FUNÇÃO" /
      "LÍDER") para melhor aproveitamento de largura na tabela — nunca
@@ -2279,8 +2293,8 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
      navegador ainda permite diminuir a escala de impressão livremente
      por cima disso. */
   const fontePx=Math.max(9, Math.min(11, 11 - Math.max(0, eventoDias.length-8)*0.25)).toFixed(1);
-  const gerarTabela=(lista, titulo)=>{
-    const grupos=agruparPorFuncaoPrincipal(lista, f=>f.funcao, f=>f.nome);
+  const gerarTabela=(lista, titulo, funcaoAgrupamento)=>{
+    const grupos=(funcaoAgrupamento||agruparPorFuncaoPrincipal)(lista, f=>f.funcao, f=>f.nome);
     const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
     <div class="folha-fechamento">
@@ -2293,7 +2307,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
           <th class="col-nome">NOME</th>
           <th class="col-func-presidencia">FUNÇÃO</th>
           ${mostrarCpf?'<th>CPF</th>':''}
-          ${eventoDias.map(d=>`<th class="col-dia">${formatDiaMes(d.data)}</th>`).join('')}
+          ${eventoDias.map(d=>`<th class="col-dia">${formatDiaSomente(d.data)}</th>`).join('')}
           <th>DIAS</th>
           <th>VALOR</th>
           <th>ADIC.</th><th>DESC.</th><th>TOTAL</th>
@@ -2325,19 +2339,21 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
   };
   if(listagemUnica){
     /* Fechamento Evento Presidência: uma única listagem sequencial,
-       sem separar Vigilantes das demais funções — agruparPorFuncaoPrincipal
-       já respeita a ordem oficial (Coordenador, Supervisor, Vigilante,
-       Aux. de Serviços Gerais, Brigadista, Carregador, Porteiro), então
-       a sequência sai correta automaticamente, num só <table> (sem
-       quebra de página forçada entre grupos — só existe uma folha, que
-       já recebe page-break-after:auto por ser :last-child). */
+       sem separar Vigilantes das demais funções. Aqui (só aqui) o
+       líder forma um grupo PRÓPRIO, logo abaixo da função principal —
+       agruparPorFuncaoExataOrdenada() cuida disso; a ordem das
+       funções continua a oficial do sistema. Sem quebra de página
+       forçada entre grupos — é uma única <table>, só existe uma
+       folha, que já recebe page-break-after:auto por ser
+       :last-child. O total fica sempre logo após a listagem, sem
+       nenhum page-break-before proposital. */
     const totalGeral=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
       <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
-      ${gerarTabela(fechamentoDados, null)}
-      <div class="totals" style="margin-top:10px;">
-        <div class="item"><div class="label">Número total de colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
-        <div class="item"><div class="label">Total a pagar</div><div class="value">${brl(totalGeral)}</div></div>
+      ${gerarTabela(fechamentoDados, null, agruparPorFuncaoExataOrdenada)}
+      <div class="totals" style="margin-top:10px; page-break-inside:avoid;">
+        <div class="item"><div class="label">Total de colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
+        <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(totalGeral)}</div></div>
       </div>
     `;
   }
