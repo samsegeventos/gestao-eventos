@@ -261,7 +261,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 18:10';
+const APP_VERSION = '26/08/2026 18:50';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -481,11 +481,18 @@ function agruparPorFuncaoPrincipal(lista, getFuncao, getNome){
    todas as colunas) seguida das linhas normais dos colaboradores.
    Continuar na mesma tabela é o que garante que nomes/funções de
    tamanhos diferentes entre grupos não desalinhem as colunas. */
-function linhasComTituloDeGrupo(grupos, colspan, renderLinha){
-  return grupos.map(g=>`
-    <tr class="linha-titulo-grupo"><td colspan="${colspan}">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</td></tr>
+function linhasComTituloDeGrupo(grupos, colspan, renderLinha, calcularTotalGrupo){
+  /* calcularTotalGrupo é opcional (usado só na impressão do
+     fechamento) — quando informado, mostra "TOTAL: R$ X" alinhado à
+     direita no mesmo título do bloco, sem alterar nenhum cálculo
+     (soma os valores já prontos de cada colaborador do grupo). */
+  return grupos.map(g=>{
+    const totalTxt=calcularTotalGrupo ? `<span style="float:right;">TOTAL: ${brl(calcularTotalGrupo(g.itens))}</span>` : '';
+    return `
+    <tr class="linha-titulo-grupo"><td colspan="${colspan}">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}${totalTxt}</td></tr>
     ${g.itens.map((item,i)=>renderLinha(item,i+1)).join('')}
-  `).join('');
+  `;
+  }).join('');
 }
 function formatarDataComDiaSemana(dataIso){
   /* Data local (T00:00:00, sem 'Z') — evita que o dia da semana saia
@@ -1784,24 +1791,14 @@ function renderAprovacaoGestor(){
      ser a fonte real de presença. Por isso ficava sempre vazia. Agora
      usa fechamentoDados, a mesma fonte já usada por "Fechamento
      Financeiro" — nenhum cálculo novo, só reaproveita o que já vem
-     pronto de fechamento_evento(). */
+     pronto de fechamento_evento(). A impressão da conferência usa a
+     mesma função compartilhada de "FECHAMENTO EVENTO - IMPRESSÃO",
+     só sem a coluna CPF — sem duplicar a lógica em dois lugares. */
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem dados de fechamento</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
   const total=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
   return `
-    <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-      <div><div class="card-title">Fechamento da equipe — conferência do gestor</div>
-      <div class="card-sub">Confira os valores (calculados a partir do Checkout por Dia) antes de aprovar. Após aprovado, o evento fica disponível em Pagamentos.</div></div>
-      <button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button>
-    </div>
-    <table>
-      <thead><tr><th>Colaborador</th><th>Função</th><th>Dias trabalhados</th><th>Horas adicionais</th><th>Total a receber</th></tr></thead>
-      <tbody>
-        ${fechamentoDados.map(f=>`<tr>
-          <td>${escapeHtml(nomeExibicao(f.nome))}</td><td>${escapeHtml(f.funcao||'—')}</td>
-          <td class="mono">${f.dias_trabalhados}</td><td class="mono">${f.horas_extras}h</td>
-          <td class="mono">${brl(f.total_receber)}</td></tr>`).join('')}
-      </tbody>
-    </table>
+    <div class="card-sub">Confira os valores (calculados a partir do Checkout por Dia) antes de aprovar. Após aprovado, o evento fica disponível em Pagamentos.</div>
+    ${renderTabelaFechamentoImpressao(false)}
     <div class="totals">
       <div class="item"><div class="label">Colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
       <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(total)}</div></div>
@@ -2201,27 +2198,41 @@ function mesReferencia(ev){
   return `${MESES_PT[Number(m)-1]}/${y}`;
 }
 function formatDiaMes(iso){ if(!iso) return ''; const [,m,d]=iso.split('-'); return `${d}/${m}`; }
-function renderFechamentoEventoImpressao(){
-  /* "FECHAMENTO EVENTO - IMPRESSÃO" — antes ficava dentro de
-     Fechamento Financeiro (como "Impressão p/ Financeiro"/"Por
-     datas"); agora vive só dentro de Aprovação do Gestor, sem
-     duplicidade. Mesma fonte de dados de sempre (fechamentoDados,
-     presencasNovas, eventoDias), sem recalcular nenhum valor
-     financeiro novo. O valor de cada dia é só o valor/diária da
-     função daquele colaborador (repetido dia a dia em que ele
-     trabalhou, segundo o registro real do Checkout), seguido das
-     horas adicionais daquele dia específico, se houver. */
+function funcaoParaImpressaoHTML(funcaoReal){
+  /* Só exibição: função líder quebra em duas linhas ("FUNÇÃO" /
+     "LÍDER") para melhor aproveitamento de largura na tabela — nunca
+     altera a função real salva nos dados. Não usar em telas fora da
+     impressão do fechamento (a Impressão p/ Presidência tem sua
+     própria regra de abreviação de uma linha só, já implementada). */
+  const norm=normalizaFuncaoDisplay(funcaoReal);
+  const sufixo=' LÍDER DE EQUIPE';
+  if(norm.endsWith(sufixo)) return `${escapeHtml(norm.slice(0,-sufixo.length))}<br>LÍDER`;
+  return escapeHtml(norm||'—');
+}
+function renderTabelaFechamentoImpressao(mostrarCpf){
+  /* Função única compartilhada entre "FECHAMENTO EVENTO - IMPRESSÃO"
+     (mostrarCpf=true) e a impressão da Conferência do Gestor
+     (mostrarCpf=false) — mesma estrutura, mesma fonte de dados
+     (fechamentoDados, presencasNovas, eventoDias), sem recalcular
+     nenhum valor financeiro novo e sem duplicar a lógica em dois
+     lugares. O valor de cada dia é só o valor/diária da função
+     daquele colaborador (repetido dia a dia em que ele trabalhou,
+     segundo o registro real do Checkout), seguido das horas
+     adicionais daquele dia específico, se houver. */
   if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
   const ev=currentEvent();
   const ehVigilante=f=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao))==='VIGILANTE';
   const vigilantes=fechamentoDados.filter(ehVigilante);
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
-  // Nome + Função + CPF + 1 por dia + Dias + Valor/Função + Valor + Adic./Desc./Total + Assinatura + Data
-  const colspanDatas=3+eventoDias.length+3+3+2;
-  /* Cabeçalho único, repetido em cada página impressa (thead nativo).
-     Nome do evento + período na mesma linha; mês de referência no
-     canto direito. */
-  const cabecalhoRepetido=()=>`
+  // Nome + Função [+ CPF] + 1 por dia + Dias + Valor/Dia + Valor + Adic./Desc./Total + Assinatura + Data
+  const colspanDatas=(mostrarCpf?3:2)+eventoDias.length+3+3+2;
+  /* Cabeçalho de DUAS linhas, repetido em cada página impressa (thead
+     nativo, com display:table-header-group): 1) título da folha
+     (VIGILANTES ou GRUPO ANJOS DA PAZ); 2) nome do evento+período à
+     esquerda e mês de referência à direita. Impossível "desaparecer"
+     entre páginas porque faz parte do próprio thead da tabela. */
+  const cabecalhoRepetido=(titulo)=>`
+    <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">${escapeHtml(titulo)}</th></tr>
     <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
         <span>${escapeHtml(nomeExibicao(ev.evento))} — ${escapeHtml(periodoImpressao(ev)).toUpperCase()}</span>
@@ -2232,35 +2243,42 @@ function renderFechamentoEventoImpressao(){
      coluna é a MESMA sempre, em qualquer bloco/folha e com qualquer
      quantidade de dias — não depende do conteúdo de cada linha para
      calcular largura, que era a causa do desalinhamento em eventos
-     com muitos dias. */
+     com muitos dias. Assinatura e Data um pouco mais largas do que
+     antes, a pedido. */
   const colgroup=(()=>{
-    const fixas=['14%','11%','9%','4%','7%','6%','6%','6%','6%','12%','5%']; // Nome,Função,CPF,Dias,Valor/Função,Valor,Adic,Desc,Total,Assinatura,Data (11 colunas fixas)
+    const fixas = mostrarCpf
+      ? ['13%','10%','8%','4%','7%','7%','6%','6%','6%','15%','7%']   // Nome,Função,CPF,Dias,Valor/Dia,Valor,Adic,Desc,Total,Assinatura,Data
+      : ['15%','12%','4%','7%','7%','7%','7%','7%','16%','8%'];       // Nome,Função,Dias,Valor/Dia,Valor,Adic,Desc,Total,Assinatura,Data
     const somaFixas=fixas.reduce((s,v)=>s+parseFloat(v),0);
     const larguraDia=eventoDias.length ? ((100-somaFixas)/eventoDias.length).toFixed(2)+'%' : '3%';
+    const qtdAntesDosDias=mostrarCpf?3:2;
     return `<colgroup>
-      <col style="width:${fixas[0]}"><col style="width:${fixas[1]}"><col style="width:${fixas[2]}">
+      ${fixas.slice(0,qtdAntesDosDias).map(w=>`<col style="width:${w}">`).join('')}
       ${eventoDias.map(()=>`<col style="width:${larguraDia}">`).join('')}
-      <col style="width:${fixas[3]}"><col style="width:${fixas[4]}"><col style="width:${fixas[5]}"><col style="width:${fixas[6]}"><col style="width:${fixas[7]}"><col style="width:${fixas[8]}"><col style="width:${fixas[9]}"><col style="width:${fixas[10]}">
+      ${fixas.slice(qtdAntesDosDias).map(w=>`<col style="width:${w}">`).join('')}
     </colgroup>`;
   })();
-  /* Eventos com muitos dias: reduz moderadamente a fonte em vez de
-     cortar/quebrar qualquer informação — o navegador ainda permite
-     diminuir a escala de impressão livremente por cima disso. */
-  const fontePx=Math.max(9, Math.min(12.5, 12.5 - Math.max(0, eventoDias.length-6)*0.3)).toFixed(1);
-  const gerarTabela=(lista)=>{
+  /* Fonte de referência 11px; eventos com muitos dias reduzem
+     moderadamente em vez de cortar/quebrar qualquer informação — o
+     navegador ainda permite diminuir a escala de impressão livremente
+     por cima disso. */
+  const fontePx=Math.max(9, Math.min(11, 11 - Math.max(0, eventoDias.length-8)*0.25)).toFixed(1);
+  const gerarTabela=(lista, titulo)=>{
     const grupos=agruparPorFuncaoPrincipal(lista, f=>f.funcao, f=>f.nome);
+    const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
     return `
+    <div class="folha-fechamento">
     <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
       ${colgroup}
       <thead>
-        ${cabecalhoRepetido()}
+        ${cabecalhoRepetido(titulo)}
         <tr>
           <th class="col-nome">NOME</th>
           <th class="col-func-presidencia">FUNÇÃO</th>
-          <th>CPF</th>
+          ${mostrarCpf?'<th>CPF</th>':''}
           ${eventoDias.map(d=>`<th class="col-dia">${formatDiaMes(d.data)}</th>`).join('')}
           <th>DIAS</th>
-          <th>VALOR/FUNÇÃO</th>
+          <th>VALOR<br>DIA</th>
           <th>VALOR</th>
           <th>ADIC.</th><th>DESC.</th><th>TOTAL</th><th class="col-assinatura">ASSINATURA</th><th class="col-data-manual">DATA</th>
         </tr>
@@ -2269,8 +2287,8 @@ function renderFechamentoEventoImpressao(){
         ${linhasComTituloDeGrupo(grupos, colspanDatas, (f)=>`
           <tr>
             <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}</td>
-            <td class="col-func-presidencia">${escapeHtml((f.funcao||'—').toUpperCase())}</td>
-            <td>${f.cpf?formatCpf(f.cpf):'—'}</td>
+            <td class="col-func-presidencia">${funcaoParaImpressaoHTML(f.funcao)}</td>
+            ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
             ${eventoDias.map(d=>{
               const pr=presencaDoDia(f.participacao_id, d.id);
               if(!pr || !pr.entrada_ts) return `<td class="col-dia">-</td>`;
@@ -2285,16 +2303,18 @@ function renderFechamentoEventoImpressao(){
             <td>${brl(f.total_receber)}</td>
             <td class="col-assinatura"></td>
             <td class="col-data-manual"></td>
-          </tr>`)}
+          </tr>`, totalGrupo)}
       </tbody>
-    </table>`;
+    </table>
+    </div>`;
   };
   return `
-    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button></div>
-    ${vigilantes.length ? `<div class="folha-fechamento"><div class="card-title">VIGILANTES</div>${gerarTabela(vigilantes)}</div>` : ''}
-    ${demais.length ? `<div class="folha-fechamento"><div class="card-title">GRUPO ANJOS DA PAZ</div>${gerarTabela(demais)}</div>` : ''}
+    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="${mostrarCpf?'btnPrintFechamentoEvento':'btnPrint'}">Imprimir / Exportar PDF</button></div>
+    ${vigilantes.length ? gerarTabela(vigilantes,'VIGILANTES') : ''}
+    ${demais.length ? gerarTabela(demais,'GRUPO ANJOS DA PAZ') : ''}
   `;
 }
+function renderFechamentoEventoImpressao(){ return renderTabelaFechamentoImpressao(true); }
 function attachFechamentoHandlers(){
   const btnCol=document.getElementById('btnVisaoColaborador');
   const btnFunc=document.getElementById('btnVisaoFuncao');
