@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 21:00';
+const APP_VERSION = '26/08/2026 22:50';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -610,6 +610,11 @@ let fechamentoDados = [];
 /* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
 let cpfsAutorizadosBusca = '';
+/* ---- Banco de Colaboradores (novo) ---- */
+let colaboradoresBanco = [];
+let colaboradoresBuscaNome = '';
+let colaboradoresBuscaCpf = '';
+let crachaSelecionados = new Set(); // participacao/id de staff selecionados para impressão, dentro do evento atual
 let subTab = 'preescala';
 let section = 'dashboard';    // dashboard | clientes | eventos | evento | pagamentos | relatorios | interesse
 let dashMonth = new Date().toISOString().slice(0,7);
@@ -621,7 +626,7 @@ const paramEvento = params.get('evento');
 const paramModo = params.get('modo');
 
 /* ================= LOAD ================= */
-function isPublicMode(){ return (paramModo==='interesse' || paramModo==='status') && !!paramEvento; }
+function isPublicMode(){ return (paramModo==='interesse' || paramModo==='status' || paramModo==='cracha') && !!paramEvento; }
 async function loadAll(){
   const {data:{session}} = await sb.auth.getSession();
   gestorUnlocked = !!session;
@@ -664,6 +669,11 @@ async function loadAll(){
   if(paramModo==='status' && paramEvento){
     currentEventId = paramEvento;
     renderPublicStatus();
+    return;
+  }
+  if(paramModo==='cracha' && paramEvento){
+    currentEventId = paramEvento;
+    renderPublicCracha();
     return;
   }
 
@@ -974,6 +984,134 @@ function renderPublic(alreadySent){
   };
 }
 
+/* ================= PUBLIC CRACHÁ (link específico do evento) =================
+   Link: ?modo=cracha&evento=ID. Fonte de validação: staff[] (Escala
+   Oficial) do evento — NUNCA Pré-Escala/CPFs Autorizados. Depende das
+   RPCs 'verificar_cpf_escalado_evento' e 'salvar_colaborador_cracha'
+   (anon+authenticated) — ver observação sobre Supabase no relatório
+   desta rodada; ainda não criadas no banco. */
+function renderPublicCracha(){
+  document.querySelector('.mobile-topbar').style.display='none';
+  const root=document.getElementById('shell');
+  const ev=currentEvent();
+
+  if(!ev){
+    root.innerHTML='<div class="wrap-narrow"><div class="interesse-page"><div class="empty"><b>Evento não encontrado</b> O link pode estar incorreto ou o evento foi removido.</div></div></div>';
+    return;
+  }
+
+  root.innerHTML=`
+    <div class="wrap-narrow">
+      <div class="interesse-page">
+        <div class="ev-name">${escapeHtml(ev.evento)}</div>
+        <div class="ev-meta" style="margin-bottom:14px;">Preenchimento de dados para crachá</div>
+
+        <div class="field">
+          <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">CPF</label>
+          <input type="text" id="crachaCpf" placeholder="000.000.000-00" maxlength="14">
+        </div>
+        <button class="btn btn-amber" id="btnVerificarCrachaCpf" style="width:100%;padding:12px;">Verificar CPF</button>
+        <div id="resultadoCracha" style="margin-top:16px;"></div>
+      </div>
+    </div>
+  `;
+
+  const cpfInp=document.getElementById('crachaCpf');
+  cpfInp.oninput=()=>maskCpfInput(cpfInp);
+
+  document.getElementById('btnVerificarCrachaCpf').onclick=async ()=>{
+    const cpfLimpo=cpfInp.value.replace(/\D/g,'');
+    if(cpfLimpo.length!==11){ showToast('Informe um CPF válido.'); return; }
+
+    const btn=document.getElementById('btnVerificarCrachaCpf');
+    const resultado=document.getElementById('resultadoCracha');
+    btn.disabled=true; btn.textContent='Verificando...';
+
+    try{
+      const {data,error}=await sb.rpc('verificar_cpf_escalado_evento',{p_evento_id:ev.id, p_cpf:cpfLimpo});
+      if(error) throw error;
+      const registro=Array.isArray(data) ? data[0] : data;
+
+      if(!registro || registro.escalado!==true){
+        resultado.innerHTML=`<div class="empty"><b>CPF não encontrado na escala deste evento</b><br>Fale com o responsável pelo evento.</div>`;
+        btn.disabled=false; btn.textContent='Verificar CPF';
+        return;
+      }
+
+      /* Dados já existentes (Escala Oficial e/ou Banco de
+         Colaboradores) pré-preenchem o formulário; o colaborador só
+         completa o que faltar. Sem foto, sem telefone, sem e-mail,
+         sem data de nascimento — só o que o crachá realmente usa. */
+      resultado.innerHTML=`
+        <div class="success-box">
+          <div class="check">✓</div>
+          <div class="ev-name">CPF encontrado na escala</div>
+          <div class="field" style="margin-top:16px; text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nome completo</label>
+            <input type="text" id="crachaNome" value="${escapeHtml(registro.nome||'')}" placeholder="Nome completo">
+          </div>
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
+            <input type="text" id="crachaIdentidade" value="${escapeHtml(registro.identidade||'')}" placeholder="Número da identidade">
+          </div>
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data do curso</label>
+            <input type="date" id="crachaDataCurso" value="${escapeHtml(registro.data_curso||'')}">
+          </div>
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Reciclagem</label>
+            <input type="date" id="crachaReciclagem" value="${escapeHtml(registro.reciclagem||'')}">
+          </div>
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
+            <input type="text" id="crachaNumeroDpf" value="${escapeHtml(registro.numero_dpf||'')}" placeholder="Nº DPF">
+          </div>
+          <div id="erroCracha" style="color:var(--red); font-size:13px; margin-top:8px;"></div>
+          <button class="btn btn-teal" id="btnSalvarCracha" style="width:100%;padding:12px;margin-top:8px;">Salvar dados do crachá</button>
+        </div>
+      `;
+
+      document.getElementById('btnSalvarCracha').onclick=async ()=>{
+        const nome=nomeExibicao(document.getElementById('crachaNome').value);
+        const identidade=document.getElementById('crachaIdentidade').value.trim();
+        const dataCurso=document.getElementById('crachaDataCurso').value;
+        const reciclagem=document.getElementById('crachaReciclagem').value;
+        const numeroDpf=document.getElementById('crachaNumeroDpf').value.trim();
+        const erroBox=document.getElementById('erroCracha');
+        const btnSalvar=document.getElementById('btnSalvarCracha');
+        erroBox.textContent='';
+
+        if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
+        if(!identidade){ erroBox.textContent='Informe a identidade.'; return; }
+        if(!dataCurso){ erroBox.textContent='Informe a data do curso.'; return; }
+        if(!reciclagem){ erroBox.textContent='Informe a reciclagem.'; return; }
+        if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
+
+        btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
+
+        try{
+          const {error:erroSalvar}=await sb.rpc('salvar_colaborador_cracha',{
+            p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao,
+            p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
+          });
+          if(erroSalvar) throw erroSalvar;
+
+          resultado.innerHTML=`<div class="success-box"><div class="check">✓</div><div class="ev-name">Dados salvos com sucesso!</div><div class="ev-meta" style="margin-bottom:0;">Seu crachá será preparado pela organização do evento.</div></div>`;
+        }catch(err){
+          console.error(err);
+          erroBox.textContent='Não foi possível salvar. Tente novamente.';
+          btnSalvar.disabled=false; btnSalvar.textContent='Salvar dados do crachá';
+        }
+      };
+
+    }catch(err){
+      console.error(err);
+      resultado.innerHTML=`<div class="empty"><b>Não foi possível verificar o CPF.</b><br>Tente novamente.</div>`;
+      btn.disabled=false; btn.textContent='Verificar CPF';
+    }
+  };
+}
+
 /* ================= PUBLIC STATUS CHECK (no sidebar) ================= */
 function renderPublicStatus(){
   document.querySelector('.mobile-topbar').style.display='none';
@@ -1071,6 +1209,7 @@ function navItems(){
       <div class="nav-item ${section==='dashboard'?'active':''}" data-nav="dashboard"><span class="ic">▤</span> Dashboard</div>
       <div class="nav-item ${section==='clientes'?'active':''}" data-nav="clientes"><span class="ic">🏢</span> Cadastro de Clientes</div>
       <div class="nav-item ${section==='eventos'?'active':''}" data-nav="eventos"><span class="ic">📅</span> Eventos</div>
+      <div class="nav-item ${section==='colaboradores'?'active':''}" data-nav="colaboradores"><span class="ic">🪪</span> Banco de Colaboradores</div>
       ${ev ? `
       <div class="nav-sub open">
         <div class="nav-item ${section==='evento'&&subTab==='valoresFuncao'?'active':''}" data-nav="evento" data-sub="valoresFuncao"><span class="ic">•</span> Valores por Função</div>
@@ -1081,6 +1220,7 @@ function navItems(){
         <div class="nav-item ${section==='evento'&&subTab==='checkoutDias'?'active':''}" data-nav="evento" data-sub="checkoutDias"><span class="ic">•</span> Checkout por Dia</div>
         <div class="nav-item ${section==='evento'&&subTab==='fechamentoNovo'?'active':''}" data-nav="evento" data-sub="fechamentoNovo"><span class="ic">•</span> Fechamento Financeiro</div>
         <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
+        <div class="nav-item ${section==='evento'&&subTab==='cracha'?'active':''}" data-nav="evento" data-sub="cracha"><span class="ic">•</span> Impressão de Crachás</div>
       </div>` : ''}
       <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
       <div class="nav-item ${section==='relatorios'?'active':''}" data-nav="relatorios"><span class="ic">📈</span> Relatórios</div>
@@ -1123,8 +1263,9 @@ function attachSidebarHandlers(){
            Gestor sem ter passado antes por Fechamento). */
         if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca();
         if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento();
+        if(subTab==='cracha') await loadColaboradoresBanco();
       }
-      else { section=nav; }
+      else { section=nav; if(nav==='colaboradores') await loadColaboradoresBanco(); }
       closeMobileMenu();
       renderShell();
     };
@@ -1151,6 +1292,7 @@ async function renderMain(){
   if(section==='dashboard') return renderDashboard(main);
   if(section==='clientes') return renderClientes(main);
   if(section==='eventos') return renderEventos(main);
+  if(section==='colaboradores') return renderBancoColaboradores(main);
   if(section==='evento') return renderEventoDetail(main);
   if(section==='pagamentos') return renderPagamentos(main);
   if(section==='relatorios') return renderRelatorios(main);
@@ -1645,12 +1787,13 @@ function renderEventoDetail(main){
       <div class="subtab ${subTab==='checkoutDias'?'active':''}" data-sub="checkoutDias">Checkout por Dia</div>
       <div class="subtab ${subTab==='fechamentoNovo'?'active':''}" data-sub="fechamentoNovo">Fechamento Financeiro</div>
       <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
+      <div class="subtab ${subTab==='cracha'?'active':''}" data-sub="cracha">Impressão de Crachás</div>
     </div>
     <div class="panel" id="panelContent"></div>
   `;
   document.getElementById('btnEditEvent').onclick=()=>openEventForm(ev);
   document.getElementById('btnDeleteEvent').onclick=deleteCurrentEvent;
-  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca(); if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento(); renderShell(); }; });
+  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca(); if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento(); if(subTab==='cracha') await loadColaboradoresBanco(); renderShell(); }; });
 
   const panel=document.getElementById('panelContent');
   if(subTab==='cpfsAutorizados') panel.innerHTML=renderCpfsAutorizadosTab();
@@ -1662,12 +1805,14 @@ function renderEventoDetail(main){
   if(subTab==='escalaDias') panel.innerHTML=renderEscalaHorarioDias();
   if(subTab==='checkoutDias') panel.innerHTML=renderCheckoutDias();
   if(subTab==='fechamentoNovo') panel.innerHTML=renderFechamentoNovo();
+  if(subTab==='cracha') panel.innerHTML=renderImpressaoCrachas();
   attachDetailHandlers();
   if(subTab==='cpfsAutorizados' && gestorUnlocked) attachCpfsAutorizadosHandlers();
   if(subTab==='escalaDias' && gestorUnlocked) attachEscalaHorarioHandlers();
   if(subTab==='checkoutDias' && gestorUnlocked) attachCheckoutHandlers();
   if(subTab==='fechamentoNovo' && gestorUnlocked) attachFechamentoHandlers();
-  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo'||subTab==='cpfsAutorizados') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); await loadCpfsAutorizadosEvento(); renderShell(); });
+  if(subTab==='cracha' && gestorUnlocked) attachImpressaoCrachasHandlers();
+  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo'||subTab==='cpfsAutorizados'||subTab==='cracha') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); await loadCpfsAutorizadosEvento(); await loadColaboradoresBanco(); renderShell(); });
 }
 
 function renderPreEscala(){
@@ -2425,6 +2570,198 @@ async function loadCpfsAutorizadosEvento(){
   const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:currentEventId});
   if(error){ console.error(error); cpfsAutorizadosLista=[]; return; }
   cpfsAutorizadosLista=data||[];
+}
+/* ================= BANCO DE COLABORADORES (novo) =================
+   Cadastro central e permanente de colaboradores, independente de
+   evento — identificado por CPF único. Depende da RPC
+   'listar_colaboradores_banco' (authenticated) — ver observação sobre
+   Supabase no relatório desta rodada; ainda não criada no banco. */
+async function loadColaboradoresBanco(){
+  if(!gestorUnlocked){ colaboradoresBanco=[]; return; }
+  const {data,error}=await sb.rpc('listar_colaboradores_banco',{});
+  if(error){ console.error(error); colaboradoresBanco=[]; return; }
+  colaboradoresBanco=data||[];
+}
+function buscarColaboradorPorCpf(cpf){
+  const norm=String(cpf||'').replace(/\D/g,'');
+  return colaboradoresBanco.find(c=>String(c.cpf||'').replace(/\D/g,'')===norm) || null;
+}
+function filtrarColaboradoresBanco(){
+  const buscaDigits=(colaboradoresBuscaCpf||colaboradoresBuscaNome).replace(/\D/g,'');
+  const buscaTexto=colaboradoresBuscaNome.trim().toLowerCase();
+  if(!colaboradoresBuscaNome.trim() && !colaboradoresBuscaCpf.trim()) return colaboradoresBanco;
+  return colaboradoresBanco.filter(c=>{
+    const matchCpf = buscaDigits && String(c.cpf||'').replace(/\D/g,'').includes(buscaDigits);
+    const matchNome = buscaTexto && (c.nome||'').toLowerCase().includes(buscaTexto);
+    return matchCpf || matchNome;
+  });
+}
+function renderBancoColaboradores(main){
+  main.innerHTML=`
+    <div class="card-title">Banco de Colaboradores</div>
+    <div class="card-sub">Cadastro central e permanente — um único registro por CPF, reaproveitado em todos os eventos em que a pessoa trabalhar.</div>
+    <div class="panel">
+      <div class="add-row">
+        <div class="field"><label>Buscar por nome</label><input type="text" id="buscaColaboradorNome" placeholder="Nome" value="${escapeHtml(colaboradoresBuscaNome)}"></div>
+        <div class="field"><label>Buscar por CPF</label><input type="text" id="buscaColaboradorCpf" placeholder="000.000.000-00" maxlength="14" value="${escapeHtml(colaboradoresBuscaCpf)}"></div>
+      </div>
+      ${!gestorUnlocked ? lockScreenHtml('O Banco de Colaboradores só fica visível para o gestor.') : renderListaColaboradoresBanco()}
+    </div>
+  `;
+  attachBancoColaboradoresHandlers();
+}
+function renderListaColaboradoresBanco(){
+  const lista=filtrarColaboradoresBanco();
+  if(!lista.length){
+    return `<div class="empty"><b>${(colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim())?'Nenhum resultado para essa busca':'Nenhum colaborador cadastrado ainda'}</b>${(colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim())?'':'Os cadastros chegam pelo link de crachá de cada evento.'}</div>`;
+  }
+  /* Mesma lógica de agrupamento já usada no resto do sistema — líder
+     junto da função principal, líderes primeiro, ordem oficial das
+     funções — nada novo foi inventado aqui. */
+  const grupos=agruparPorFuncaoPrincipal(lista, c=>c.funcao, c=>c.nome);
+  return `
+    ${renderResumoQuantidadesFuncao(grupos)}
+    <table>
+      <thead><tr><th>#</th><th>Nome</th><th>Função</th><th>CPF</th><th>Identidade</th><th>Data do curso</th><th>Reciclagem</th><th>Nº DPF</th><th>Status</th></tr></thead>
+      <tbody>
+        ${linhasComTituloDeGrupo(grupos, 9, (c,numero)=>{
+          const status=statusCrachaColaborador(c);
+          return `
+          <tr>
+            <td class="mono">${numero}</td>
+            <td>${escapeHtml(nomeExibicao(c.nome))}</td>
+            <td>${escapeHtml(c.funcao||'—')}</td>
+            <td class="mono">${formatCpf(c.cpf)}</td>
+            <td>${escapeHtml(c.identidade||'—')}</td>
+            <td class="mono">${c.data_curso?formatDate(c.data_curso):'—'}</td>
+            <td class="mono">${c.reciclagem?formatDate(c.reciclagem):'—'}</td>
+            <td>${escapeHtml(c.numero_dpf||'—')}</td>
+            <td><span class="badge ${status.completo?'pago':'pendente'}">${status.completo?'Dados completos':'Pendente'}</span></td>
+          </tr>`;
+        })}
+      </tbody>
+    </table>
+  `;
+}
+function attachBancoColaboradoresHandlers(){
+  const inpNome=document.getElementById('buscaColaboradorNome');
+  const inpCpf=document.getElementById('buscaColaboradorCpf');
+  if(inpNome) inpNome.oninput=()=>{ colaboradoresBuscaNome=inpNome.value; renderShell(); };
+  if(inpCpf) inpCpf.oninput=(e)=>{ maskCpfInput(e.target); colaboradoresBuscaCpf=inpCpf.value; renderShell(); };
+}
+/* ================= IMPRESSÃO DE CRACHÁS (novo, dentro do evento) =================
+   Fonte da lista de escalados: staff[] (Escala Oficial) — nunca a
+   Pré-Escala. Fonte dos dados cadastrais: colaboradoresBanco (Banco
+   de Colaboradores), casado por CPF. */
+const CAMPOS_OBRIGATORIOS_CRACHA = ['nome','cpf','identidade','data_curso','reciclagem','numero_dpf']; // fácil de ajustar depois — sem foto, sem telefone, sem e-mail, sem data de nascimento
+function statusCrachaColaborador(cadastro){
+  if(!cadastro) return {completo:false, faltando:['todos os dados (colaborador ainda não preencheu o formulário)']};
+  const rotulos={nome:'nome', cpf:'CPF', identidade:'identidade', data_curso:'data do curso', reciclagem:'reciclagem', numero_dpf:'Nº DPF'};
+  const faltando=CAMPOS_OBRIGATORIOS_CRACHA.filter(campo=>!cadastro[campo]).map(campo=>rotulos[campo]);
+  return {completo:faltando.length===0, faltando};
+}
+function renderImpressaoCrachas(){
+  if(!gestorUnlocked) return lockScreenHtml('A impressão de crachás só fica visível para o gestor.');
+  const ev=currentEvent();
+  const escalados=staff.filter(s=>s.escalado);
+  const linkCracha=`${location.origin}${location.pathname}?modo=cracha&evento=${ev.id}`;
+  if(!escalados.length){
+    return `
+      <div class="card-title">Impressão de crachás</div>
+      <div class="card-sub">Nenhum colaborador escalado ainda — confirme colaboradores em "Escala Oficial" primeiro.</div>
+    `;
+  }
+  const linhas=escalados.map(s=>{
+    const cadastro=buscarColaboradorPorCpf(s.cpf);
+    const status=statusCrachaColaborador(cadastro);
+    return {staff:s, cadastro, status};
+  });
+  const completos=linhas.filter(l=>l.status.completo);
+  return `
+    <div class="card-title">Impressão de crachás</div>
+    <div class="card-sub">Lista vem da Escala Oficial. Envie o link abaixo para cada colaborador completar os dados do crachá (identidade, data do curso, reciclagem, Nº DPF) — os dados ficam salvos no Banco de Colaboradores e são reaproveitados em outros eventos.</div>
+    <div class="add-row" style="align-items:center;">
+      <input type="text" readonly value="${escapeHtml(linkCracha)}" style="flex:1; min-width:240px;" id="inputLinkCracha">
+      <button class="btn btn-amber" id="btnCopiarLinkCracha">Link para cadastro do crachá</button>
+    </div>
+    <table style="margin-top:16px;">
+      <thead><tr><th><input type="checkbox" id="chkSelecionarTodosCracha"></th><th>Nome</th><th>Função</th><th>CPF</th><th>Status</th></tr></thead>
+      <tbody>
+        ${linhas.map(l=>`
+          <tr data-cpf="${l.staff.cpf||''}">
+            <td><input type="checkbox" class="chk-cracha-item" ${l.status.completo?'':'disabled'} ${crachaSelecionados.has(l.staff.cpf)?'checked':''}></td>
+            <td>${escapeHtml(nomeExibicao(l.staff.nome))}</td>
+            <td>${escapeHtml(l.staff.funcao||'—')}</td>
+            <td class="mono">${l.staff.cpf?formatCpf(l.staff.cpf):'—'}</td>
+            <td>
+              ${l.status.completo
+                ? `<span class="badge pago">Dados completos</span>`
+                : `<span class="badge pendente">Pendente</span> <span style="font-size:11px;color:var(--muted);">faltando: ${escapeHtml(l.status.faltando.join(', '))}</span>`}
+            </td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+    <div style="margin-top:16px; display:flex; align-items:center; gap:12px;">
+      <button class="btn btn-teal" id="btnImprimirCrachas" ${completos.length?'':'disabled'}>Imprimir crachás</button>
+      <span style="font-size:12px;color:var(--muted);">${completos.length} de ${escalados.length} colaborador(es) com dados completos</span>
+    </div>
+    <div id="previaCrachas" style="margin-top:20px;"></div>
+  `;
+}
+function attachImpressaoCrachasHandlers(){
+  const btnCopiar=document.getElementById('btnCopiarLinkCracha');
+  if(btnCopiar) btnCopiar.onclick=()=>{
+    const input=document.getElementById('inputLinkCracha');
+    input.select();
+    navigator.clipboard && navigator.clipboard.writeText(input.value).then(()=>showToast('Link copiado.')).catch(()=>showToast('Não foi possível copiar automaticamente — selecione e copie manualmente.'));
+  };
+  const chkTodos=document.getElementById('chkSelecionarTodosCracha');
+  if(chkTodos) chkTodos.onchange=()=>{
+    document.querySelectorAll('.chk-cracha-item:not(:disabled)').forEach(chk=>{
+      chk.checked=chkTodos.checked;
+      const cpf=chk.closest('tr').dataset.cpf;
+      if(chkTodos.checked) crachaSelecionados.add(cpf); else crachaSelecionados.delete(cpf);
+    });
+  };
+  document.querySelectorAll('.chk-cracha-item').forEach(chk=>{
+    chk.onchange=()=>{
+      const cpf=chk.closest('tr').dataset.cpf;
+      if(chk.checked) crachaSelecionados.add(cpf); else crachaSelecionados.delete(cpf);
+    };
+  });
+  const btnImprimir=document.getElementById('btnImprimirCrachas');
+  if(btnImprimir) btnImprimir.onclick=()=>{
+    /* Estrutura inicial só de validação — layout definitivo do crachá
+       fica para uma próxima rodada, combinado. Frente: espaço vazio
+       reservado para a foto (colada manualmente depois — sem
+       placeholder/ícone/avatar) + nome completo. Verso: identidade,
+       CPF, data do curso, reciclagem e Nº DPF — sem função, telefone,
+       e-mail ou qualquer outro dado. */
+    const selecionados=staff.filter(s=>s.escalado && crachaSelecionados.has(s.cpf) && statusCrachaColaborador(buscarColaboradorPorCpf(s.cpf)).completo);
+    if(!selecionados.length){ showToast('Selecione ao menos um colaborador com dados completos.'); return; }
+    const previa=document.getElementById('previaCrachas');
+    previa.innerHTML=`
+      <div class="card-sub" style="margin-bottom:10px;">Pré-visualização simples — o layout definitivo do crachá ainda será ajustado.</div>
+      <div style="display:flex; flex-wrap:wrap; gap:14px;">
+        ${selecionados.map(s=>{
+          const cad=buscarColaboradorPorCpf(s.cpf);
+          return `
+          <div style="display:flex; gap:10px;">
+            <div style="width:170px; height:220px; border:1px solid var(--line); border-radius:10px; padding:14px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
+              <div style="width:100px; height:110px; border:1px dashed var(--line); margin-bottom:14px;"></div>
+              <div style="font-weight:700; font-size:14px; text-align:center; text-transform:uppercase;">${escapeHtml(nomeExibicao(s.nome))}</div>
+            </div>
+            <div style="width:170px; height:220px; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; display:flex; flex-direction:column; gap:8px; justify-content:center;">
+              <div><b>IDENTIDADE:</b> ${escapeHtml(cad.identidade||'')}</div>
+              <div><b>CPF:</b> ${formatCpf(cad.cpf)}</div>
+              <div><b>DATA DO CURSO:</b> ${cad.data_curso?formatDate(cad.data_curso):''}</div>
+              <div><b>RECICLAGEM:</b> ${cad.reciclagem?formatDate(cad.reciclagem):''}</div>
+              <div><b>Nº DPF:</b> ${escapeHtml(cad.numero_dpf||'')}</div>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+  };
 }
 function filtrarCpfsAutorizados(){
   const buscaDigits=cpfsAutorizadosBusca.replace(/\D/g,'');
