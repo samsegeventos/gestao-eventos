@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 22:50';
+const APP_VERSION = '26/08/2026 23:20';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1010,6 +1010,7 @@ function renderPublicCracha(){
           <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">CPF</label>
           <input type="text" id="crachaCpf" placeholder="000.000.000-00" maxlength="14">
         </div>
+        <div id="erroCpfCracha" style="color:var(--red); font-size:13px; margin-bottom:8px;"></div>
         <button class="btn btn-amber" id="btnVerificarCrachaCpf" style="width:100%;padding:12px;">Verificar CPF</button>
         <div id="resultadoCracha" style="margin-top:16px;"></div>
       </div>
@@ -1020,8 +1021,10 @@ function renderPublicCracha(){
   cpfInp.oninput=()=>maskCpfInput(cpfInp);
 
   document.getElementById('btnVerificarCrachaCpf').onclick=async ()=>{
+    const erroCpfBox=document.getElementById('erroCpfCracha');
+    erroCpfBox.textContent='';
     const cpfLimpo=cpfInp.value.replace(/\D/g,'');
-    if(cpfLimpo.length!==11){ showToast('Informe um CPF válido.'); return; }
+    if(cpfLimpo.length!==11){ erroCpfBox.textContent='CPF INVÁLIDO. VERIFIQUE OS NÚMEROS INFORMADOS.'; return; }
 
     const btn=document.getElementById('btnVerificarCrachaCpf');
     const resultado=document.getElementById('resultadoCracha');
@@ -1033,7 +1036,7 @@ function renderPublicCracha(){
       const registro=Array.isArray(data) ? data[0] : data;
 
       if(!registro || registro.escalado!==true){
-        resultado.innerHTML=`<div class="empty"><b>CPF não encontrado na escala deste evento</b><br>Fale com o responsável pelo evento.</div>`;
+        resultado.innerHTML=`<div class="empty"><b>ESTE CPF NÃO ESTÁ NA ESCALA OFICIAL DESTE EVENTO E NÃO PODE REALIZAR O CADASTRO DO CRACHÁ.</b><br>Fale com o responsável pelo evento.</div>`;
         btn.disabled=false; btn.textContent='Verificar CPF';
         return;
       }
@@ -1052,7 +1055,7 @@ function renderPublicCracha(){
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
-            <input type="text" id="crachaIdentidade" value="${escapeHtml(registro.identidade||'')}" placeholder="Número da identidade">
+            <input type="text" id="crachaIdentidade" value="${escapeHtml(formatIdentidadeMG(registro.identidade||''))}" placeholder="MG12.345.678">
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data do curso</label>
@@ -1064,28 +1067,71 @@ function renderPublicCracha(){
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
-            <input type="text" id="crachaNumeroDpf" value="${escapeHtml(registro.numero_dpf||'')}" placeholder="Nº DPF">
+            <input type="text" id="crachaNumeroDpf" value="${escapeHtml(formatNumeroDpfMG(registro.numero_dpf||''))}" placeholder="MG1234567/8901">
           </div>
           <div id="erroCracha" style="color:var(--red); font-size:13px; margin-top:8px;"></div>
           <button class="btn btn-teal" id="btnSalvarCracha" style="width:100%;padding:12px;margin-top:8px;">Salvar dados do crachá</button>
         </div>
       `;
 
+      const identidadeInp=document.getElementById('crachaIdentidade');
+      const dpfInp=document.getElementById('crachaNumeroDpf');
+      identidadeInp.oninput=()=>maskIdentidadeInput(identidadeInp);
+      dpfInp.oninput=()=>maskNumeroDpfInput(dpfInp);
+
+      const marcarCampo=(el, invalido)=>{ el.style.borderColor = invalido ? 'var(--red)' : ''; };
+
       document.getElementById('btnSalvarCracha').onclick=async ()=>{
-        const nome=nomeExibicao(document.getElementById('crachaNome').value);
-        const identidade=document.getElementById('crachaIdentidade').value.trim();
-        const dataCurso=document.getElementById('crachaDataCurso').value;
-        const reciclagem=document.getElementById('crachaReciclagem').value;
-        const numeroDpf=document.getElementById('crachaNumeroDpf').value.trim();
+        const nomeEl=document.getElementById('crachaNome');
+        const identidadeEl=document.getElementById('crachaIdentidade');
+        const dataCursoEl=document.getElementById('crachaDataCurso');
+        const reciclagemEl=document.getElementById('crachaReciclagem');
+        const numeroDpfEl=document.getElementById('crachaNumeroDpf');
         const erroBox=document.getElementById('erroCracha');
         const btnSalvar=document.getElementById('btnSalvarCracha');
-        erroBox.textContent='';
+        erroBox.innerHTML='';
+        [nomeEl,identidadeEl,dataCursoEl,reciclagemEl,numeroDpfEl].forEach(el=>marcarCampo(el,false));
 
-        if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
-        if(!identidade){ erroBox.textContent='Informe a identidade.'; return; }
-        if(!dataCurso){ erroBox.textContent='Informe a data do curso.'; return; }
-        if(!reciclagem){ erroBox.textContent='Informe a reciclagem.'; return; }
-        if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
+        const nome=nomeExibicao(nomeEl.value);
+        const identidade=formatIdentidadeMG(identidadeEl.value);
+        const dataCurso=dataCursoEl.value;
+        const reciclagem=reciclagemEl.value;
+        const numeroDpf=formatNumeroDpfMG(numeroDpfEl.value);
+
+        /* ORDEM DAS VALIDAÇÕES, TODAS ANTES DE CHAMAR O SUPABASE:
+           1) presença dos campos obrigatórios; 2) completude de
+           Identidade e Nº DPF (formato inteiro, não só "preenchido");
+           3) validade da Reciclagem contra o período do evento. */
+        const faltando=[];
+        if(!nome) faltando.push({el:nomeEl, rotulo:'NOME COMPLETO'});
+        if(!identidade) faltando.push({el:identidadeEl, rotulo:'IDENTIDADE'});
+        if(!dataCurso) faltando.push({el:dataCursoEl, rotulo:'DATA DO CURSO'});
+        if(!reciclagem) faltando.push({el:reciclagemEl, rotulo:'RECICLAGEM'});
+        if(!numeroDpf) faltando.push({el:numeroDpfEl, rotulo:'Nº DPF'});
+        if(faltando.length){
+          faltando.forEach(f=>marcarCampo(f.el,true));
+          erroBox.innerHTML=`<b>NÃO FOI POSSÍVEL SALVAR OS DADOS</b><br>CORRIJA OS SEGUINTES CAMPOS:<br>${faltando.map(f=>'• '+f.rotulo).join('<br>')}`;
+          return;
+        }
+
+        const incompletos=[];
+        if(contarDigitos(identidade)<8){ incompletos.push('IDENTIDADE INCOMPLETA. PREENCHA TODOS OS NÚMEROS.'); marcarCampo(identidadeEl,true); }
+        if(contarDigitos(numeroDpf)<11){ incompletos.push('Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'); marcarCampo(numeroDpfEl,true); }
+        if(incompletos.length){
+          erroBox.innerHTML=incompletos.join('<br>');
+          return;
+        }
+
+        const validacaoReciclagem=validarReciclagemParaEvento(reciclagem, ev);
+        if(!validacaoReciclagem.valido){
+          marcarCampo(reciclagemEl,true);
+          erroBox.innerHTML=`<b>RECICLAGEM FORA DO PRAZO DE VALIDADE</b><br>
+            DATA DA RECICLAGEM: ${formatDate(reciclagem)}<br>
+            VALIDADE ATÉ: ${formatDate(validacaoReciclagem.validadeFinal)}<br>
+            PERÍODO DO EVENTO: ${formatDate(validacaoReciclagem.dataInicial)} ATÉ ${formatDate(validacaoReciclagem.dataFinal)}<br>
+            A DATA DA RECICLAGEM PRECISA ESTAR VIGENTE DURANTE TODO O PERÍODO DO EVENTO.`;
+          return;
+        }
 
         btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
 
@@ -1096,17 +1142,17 @@ function renderPublicCracha(){
           });
           if(erroSalvar) throw erroSalvar;
 
-          resultado.innerHTML=`<div class="success-box"><div class="check">✓</div><div class="ev-name">Dados salvos com sucesso!</div><div class="ev-meta" style="margin-bottom:0;">Seu crachá será preparado pela organização do evento.</div></div>`;
+          resultado.innerHTML=`<div class="success-box"><div class="check">✓</div><div class="ev-name">DADOS SALVOS COM SUCESSO!</div><div class="ev-meta" style="margin-bottom:0;">Seu cadastro para o crachá foi atualizado.</div></div>`;
         }catch(err){
-          console.error(err);
-          erroBox.textContent='Não foi possível salvar. Tente novamente.';
+          console.error('Erro ao salvar cadastro do crachá:', err);
+          erroBox.innerHTML=`<b>NÃO FOI POSSÍVEL SALVAR O CADASTRO</b><br>${formatarErroSupabase(err)}`;
           btnSalvar.disabled=false; btnSalvar.textContent='Salvar dados do crachá';
         }
       };
 
     }catch(err){
-      console.error(err);
-      resultado.innerHTML=`<div class="empty"><b>Não foi possível verificar o CPF.</b><br>Tente novamente.</div>`;
+      console.error('Erro ao verificar CPF do crachá:', err);
+      resultado.innerHTML=`<div class="empty"><b>OCORREU UM ERRO AO VERIFICAR O CPF</b><br>${formatarErroSupabase(err)}</div>`;
       btn.disabled=false; btn.textContent='Verificar CPF';
     }
   };
@@ -2565,6 +2611,63 @@ function formatTelefone(v){
   return `(${d.slice(0,2)}) ${d.slice(2,3)} ${d.slice(3,7)}-${d.slice(7)}`;
 }
 function maskTelefoneInput(el){ el.value=formatTelefone(el.value); }
+/* ================= CRACHÁ: máscaras MG e validações (novo) =================
+   Ambas seguem o mesmo padrão de formatX(v)/maskXInput(el) já usado
+   por CPF/telefone: strip de tudo que não é dígito (o que também
+   resolve "colar valor já formatado" — MG e pontuação são removidos
+   e reconstruídos do zero, nunca duplicados) + limite de dígitos +
+   reconstrução progressiva da máscara. */
+function formatIdentidadeMG(v){
+  const d=(v||'').replace(/\D/g,'').slice(0,8);
+  if(!d) return '';
+  let out='MG'+d.slice(0,2);
+  if(d.length>2) out+='.'+d.slice(2,5);
+  if(d.length>5) out+='.'+d.slice(5,8);
+  return out;
+}
+function maskIdentidadeInput(el){ el.value=formatIdentidadeMG(el.value); }
+function formatNumeroDpfMG(v){
+  const d=(v||'').replace(/\D/g,'').slice(0,11);
+  if(!d) return '';
+  let out='MG'+d.slice(0,7);
+  if(d.length>7) out+='/'+d.slice(7,11);
+  return out;
+}
+function maskNumeroDpfInput(el){ el.value=formatNumeroDpfMG(el.value); }
+function contarDigitos(valorFormatado){ return (valorFormatado||'').replace(/\D/g,'').length; }
+/* Extrai o máximo de informação real de um erro do Supabase/RPC — não
+   deixa nenhum erro silencioso. message/details/hint/code, quando
+   existirem, todos aparecem para o usuário; nunca só um texto genérico. */
+function formatarErroSupabase(err){
+  if(!err) return 'MOTIVO: ERRO INESPERADO AO PROCESSAR O CADASTRO.';
+  const partes=[];
+  if(err.message) partes.push('Motivo: '+err.message);
+  if(err.details) partes.push('Detalhes: '+err.details);
+  if(err.hint) partes.push('Informação: '+err.hint);
+  if(err.code) partes.push('Código: '+err.code);
+  if(partes.length) return partes.join('<br>');
+  return 'MOTIVO: ERRO INESPERADO AO PROCESSAR O CADASTRO.';
+}
+/* Reciclagem tem validade de 1 ano a partir da própria data e precisa
+   cobrir TODO o período do evento (da primeira à última data
+   cadastrada) — comparação por string ISO (YYYY-MM-DD), que já ordena
+   cronologicamente sem precisar de objetos Date/fuso horário. */
+function somaUmAnoIso(isoDate){
+  const [y,m,d]=isoDate.split('-');
+  return `${String(Number(y)+1).padStart(4,'0')}-${m}-${d}`;
+}
+function validarReciclagemParaEvento(dataReciclagemIso, ev){
+  const dataInicial=ev.data;
+  const dataFinal=ev.dataFim || ev.data;
+  const validadeFinal=somaUmAnoIso(dataReciclagemIso);
+  if(dataReciclagemIso > dataInicial){
+    return {valido:false, dataInicial, dataFinal, validadeFinal, motivo:'posterior'};
+  }
+  if(validadeFinal < dataFinal){
+    return {valido:false, dataInicial, dataFinal, validadeFinal, motivo:'vence_durante'};
+  }
+  return {valido:true, dataInicial, dataFinal, validadeFinal};
+}
 async function loadCpfsAutorizadosEvento(){
   if(!currentEventId){ cpfsAutorizadosLista=[]; return; }
   const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:currentEventId});
