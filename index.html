@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '26/08/2026 23:40';
+const APP_VERSION = '26/08/2026 23:55';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2815,8 +2815,99 @@ function renderImpressaoCrachas(){
       <button class="btn btn-teal" id="btnImprimirCrachas" ${completos.length?'':'disabled'}>Imprimir crachás</button>
       <span style="font-size:12px;color:var(--muted);">${completos.length} de ${escalados.length} colaborador(es) com dados completos</span>
     </div>
-    <div id="previaCrachas" style="margin-top:20px;"></div>
   `;
+}
+/* ================= JANELA REAL DE IMPRESSÃO DE CRACHÁS =================
+   Monta um documento HTML próprio (sem menu, sem abas, sem tabela
+   administrativa) numa nova aba/janela via window.open() e aciona a
+   impressão do navegador — não é mais uma pré-visualização dentro da
+   página. Ordem das páginas: FRENTE do colaborador 1, VERSO do
+   colaborador 1, FRENTE do 2, VERSO do 2... — garante que frente e
+   verso do MESMO crachá fiquem em sequência para impressão duplex.
+   Cada face é UMA página própria (não estica para ocupar a A4 toda).
+   Sem foto (só o espaço reservado, vazio) e sem função em lugar
+   nenhum do layout — confirmado nos testes abaixo. */
+function abrirJanelaImpressaoCrachas(selecionados){
+  const paginas=[];
+  selecionados.forEach(s=>{
+    const cad=buscarColaboradorPorCpf(s.cpf);
+    const nome=nomeExibicao(s.nome);
+    paginas.push(`
+      <div class="pagina-cracha">
+        <div class="cracha-face cracha-frente">
+          <div class="cracha-frente-topo">
+            <div class="cracha-logo">
+              <div class="cracha-logo-nome">SAMSEG</div>
+              <div class="cracha-logo-sub">Segurança</div>
+              <div class="cracha-logo-sub">Segurança Privada</div>
+            </div>
+            <div class="cracha-foto-espaco"></div>
+          </div>
+          <div class="cracha-frente-titulo">SEGURANÇA EVENTUAL</div>
+          <div class="cracha-frente-nome">NOME: ${escapeHtml(nome)}</div>
+        </div>
+      </div>
+      <div class="pagina-cracha">
+        <div class="cracha-face cracha-verso">
+          <div class="cracha-verso-header">SAMSEG SEGURANÇA LTDA</div>
+          <div class="cracha-verso-grid">
+            <div class="cracha-verso-cel"><b>ID:</b><span>${escapeHtml(formatIdentidadeMG(cad.identidade||''))}</span></div>
+            <div class="cracha-verso-cel"><b>DATA DO CURSO</b><span>${cad.data_curso?formatDate(cad.data_curso):''}</span></div>
+            <div class="cracha-verso-cel"><b>CPF:</b><span>${formatCpf(cad.cpf)}</span></div>
+            <div class="cracha-verso-cel"><b>RECICLAGEM</b><span>${cad.reciclagem?formatDate(cad.reciclagem):''}</span></div>
+          </div>
+          <div class="cracha-verso-dpf"><b>Nº DPF:</b><span>${escapeHtml(formatNumeroDpfMG(cad.numero_dpf||''))}</span></div>
+          <div class="cracha-verso-responsavel">RESPONSÁVEL LEGAL</div>
+        </div>
+      </div>
+    `);
+  });
+
+  const html=`<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Crachás</title>
+<style>
+  *{box-sizing:border-box;}
+  body{margin:0; padding:0; font-family:'Inter',Arial,sans-serif; background:#fff;}
+  .pagina-cracha{width:100%; min-height:100vh; display:flex; align-items:center; justify-content:center; page-break-after:always;}
+  .pagina-cracha:last-child{page-break-after:auto;}
+  .cracha-face{width:340px; height:214px; border:1px solid #000; border-radius:8px; padding:14px; position:relative; display:flex; flex-direction:column;}
+  /* ---- FRENTE ---- */
+  .cracha-frente-topo{display:flex; justify-content:space-between; align-items:flex-start;}
+  .cracha-logo-nome{font-weight:800; font-size:15px; letter-spacing:0.5px;}
+  .cracha-logo-sub{font-size:9px; color:#333;}
+  .cracha-foto-espaco{width:80px; height:96px; border:1px dashed #666;}
+  .cracha-frente-titulo{text-align:center; font-weight:700; font-size:12px; letter-spacing:0.5px; margin-top:auto;}
+  .cracha-frente-nome{font-weight:700; font-size:13px; text-align:center; word-break:break-word; margin-top:8px; text-transform:uppercase;}
+  /* ---- VERSO ---- */
+  .cracha-verso-header{text-align:center; font-weight:700; font-size:12px; border-bottom:1px solid #000; padding-bottom:6px; margin-bottom:6px;}
+  .cracha-verso-grid{display:grid; grid-template-columns:1fr 1fr; border:1px solid #000; flex:1;}
+  .cracha-verso-cel{border:1px solid #000; padding:6px 8px; font-size:10.5px; display:flex; flex-direction:column; justify-content:center; gap:2px;}
+  .cracha-verso-cel span{font-size:12px; font-weight:600;}
+  .cracha-verso-dpf{border:1px solid #000; border-top:none; padding:6px 8px; font-size:10.5px; display:flex; flex-direction:column; gap:2px;}
+  .cracha-verso-dpf span{font-size:12px; font-weight:600;}
+  .cracha-verso-responsavel{text-align:center; font-weight:700; font-size:10.5px; letter-spacing:0.5px; margin-top:auto; padding-top:10px;}
+  @media print{
+    @page{ margin:0; }
+    body{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
+</style>
+</head>
+<body>
+  ${paginas.join('')}
+</body>
+</html>`;
+
+  const janela=window.open('', '_blank');
+  if(!janela){
+    throw new Error('O navegador bloqueou a abertura da janela de impressão. Permita pop-ups para este site e tente novamente.');
+  }
+  janela.document.open();
+  janela.document.write(html);
+  janela.document.close();
+  janela.onload=()=>{ janela.focus(); janela.print(); };
 }
 function attachImpressaoCrachasHandlers(){
   const btnCopiar=document.getElementById('btnCopiarLinkCracha');
@@ -2841,38 +2932,15 @@ function attachImpressaoCrachasHandlers(){
   });
   const btnImprimir=document.getElementById('btnImprimirCrachas');
   if(btnImprimir) btnImprimir.onclick=()=>{
-    /* Estrutura inicial só de validação — layout definitivo do crachá
-       fica para uma próxima rodada, combinado. Frente: espaço vazio
-       reservado para a foto (colada manualmente depois — sem
-       placeholder/ícone/avatar) + nome completo. Verso: identidade,
-       CPF, data do curso, reciclagem e Nº DPF — sem função, telefone,
-       e-mail ou qualquer outro dado. Só Vigilantes (mesma
-       classificação usada na listagem acima). */
     const ehVigilante=s=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(s.funcao))==='VIGILANTE';
     const selecionados=staff.filter(s=>s.escalado && ehVigilante(s) && crachaSelecionados.has(s.cpf) && statusCrachaColaborador(buscarColaboradorPorCpf(s.cpf)).completo);
-    if(!selecionados.length){ showToast('Selecione ao menos um colaborador com dados completos.'); return; }
-    const previa=document.getElementById('previaCrachas');
-    previa.innerHTML=`
-      <div class="card-sub" style="margin-bottom:10px;">Pré-visualização simples — o layout definitivo do crachá ainda será ajustado.</div>
-      <div style="display:flex; flex-wrap:wrap; gap:14px;">
-        ${selecionados.map(s=>{
-          const cad=buscarColaboradorPorCpf(s.cpf);
-          return `
-          <div style="display:flex; gap:10px;">
-            <div style="width:170px; height:220px; border:1px solid var(--line); border-radius:10px; padding:14px; display:flex; flex-direction:column; align-items:center; justify-content:flex-end;">
-              <div style="width:100px; height:110px; border:1px dashed var(--line); margin-bottom:14px;"></div>
-              <div style="font-weight:700; font-size:14px; text-align:center; text-transform:uppercase;">${escapeHtml(nomeExibicao(s.nome))}</div>
-            </div>
-            <div style="width:170px; height:220px; border:1px solid var(--line); border-radius:10px; padding:14px; font-size:12px; display:flex; flex-direction:column; gap:8px; justify-content:center;">
-              <div><b>IDENTIDADE:</b> ${escapeHtml(cad.identidade||'')}</div>
-              <div><b>CPF:</b> ${formatCpf(cad.cpf)}</div>
-              <div><b>DATA DO CURSO:</b> ${cad.data_curso?formatDate(cad.data_curso):''}</div>
-              <div><b>RECICLAGEM:</b> ${cad.reciclagem?formatDate(cad.reciclagem):''}</div>
-              <div><b>Nº DPF:</b> ${escapeHtml(cad.numero_dpf||'')}</div>
-            </div>
-          </div>`;
-        }).join('')}
-      </div>`;
+    if(!selecionados.length){ showToast('SELECIONE PELO MENOS UM COLABORADOR PARA IMPRIMIR.'); return; }
+    try{
+      abrirJanelaImpressaoCrachas(selecionados);
+    }catch(err){
+      console.error('Erro ao preparar impressão dos crachás:', err);
+      showToast('Não foi possível abrir a impressão. '+(err&&err.message?err.message:'Erro inesperado.'));
+    }
   };
 }
 function filtrarCpfsAutorizados(){
