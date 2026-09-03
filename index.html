@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 00:20';
+const APP_VERSION = '27/08/2026 00:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2852,7 +2852,7 @@ function abrirJanelaImpressaoCrachas(selecionados){
       <div class="conjunto-cracha">
         <div class="face-frente">
           <div class="frente-topo">
-            <img class="frente-logo" src="data:image/png;base64,${LOGO_SAMSEG_BASE64}" alt="SAMSEG">
+            <div class="frente-logo-wrap"><img class="frente-logo" src="data:image/png;base64,${LOGO_SAMSEG_BASE64}" alt="SAMSEG"></div>
             <div class="frente-foto-espaco"></div>
           </div>
           <div class="frente-titulo">SEGURANÇA EVENTUAL</div>
@@ -2860,17 +2860,20 @@ function abrirJanelaImpressaoCrachas(selecionados){
         </div>
         <div class="face-verso">
           <div class="verso-header">
-            <div>SAMSEG</div>
-            <div>SEGURANÇA LTDA</div>
+            <div>VÁLIDO SOMENTE EM EVENTOS DA EMPRESA</div>
+            <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
             <div class="verso-cel"><b>IDENTIDADE:</b><span>${escapeHtml(formatIdentidadeMG(cad.identidade||''))}</span></div>
             <div class="verso-cel"><b>DATA DO CURSO</b><span>${cad.data_curso?formatDate(cad.data_curso):''}</span></div>
             <div class="verso-cel"><b>CPF:</b><span>${formatCpf(cad.cpf)}</span></div>
             <div class="verso-cel"><b>RECICLAGEM</b><span>${cad.reciclagem?formatDate(cad.reciclagem):''}</span></div>
+            <div class="verso-cel verso-dpf"><b>Nº DPF:</b><span>${escapeHtml(formatNumeroDpfMG(cad.numero_dpf||''))}</span></div>
           </div>
-          <div class="verso-dpf"><b>Nº DPF:</b><span>${escapeHtml(formatNumeroDpfMG(cad.numero_dpf||''))}</span></div>
-          <div class="verso-responsavel">RESPONSÁVEL LEGAL</div>
+          <div class="verso-assinatura">
+            <div class="verso-assinatura-linha"></div>
+            <div class="verso-responsavel">RESPONSÁVEL LEGAL</div>
+          </div>
         </div>
       </div>`;
   };
@@ -2897,20 +2900,37 @@ function abrirJanelaImpressaoCrachas(selecionados){
   .conjunto-cracha{width:190mm; height:65mm; display:flex; border:1px solid #000; page-break-inside:avoid; overflow:hidden;}
   .face-frente,.face-verso{width:95mm; height:65mm; padding:3mm; display:flex; flex-direction:column; overflow:hidden;}
   .face-frente{border-right:1px dashed #999;} /* linha discreta de dobra, exatamente nos 95mm */
-  /* ---- FRENTE ---- */
-  .frente-topo{display:flex; justify-content:space-between; align-items:flex-start;}
-  .frente-logo{width:34mm; height:auto; display:block;} /* proporção original preservada — nunca distorcida */
-  .frente-foto-espaco{width:19mm; height:23mm; border:1px dashed #666;}
-  .frente-titulo{text-align:center; font-weight:700; font-size:9.5px; letter-spacing:0.4px; margin-top:auto;}
-  .frente-nome{font-weight:700; font-size:9px; text-align:center; word-break:break-word; line-height:1.25; margin-top:2mm; text-transform:uppercase;}
-  /* ---- VERSO ---- */
-  .verso-header{text-align:center; font-weight:800; font-size:10px; line-height:1.3; border-bottom:1px solid #000; padding-bottom:2mm; margin-bottom:2mm;}
-  .verso-grid{display:grid; grid-template-columns:1fr 1fr; border:1px solid #000; flex:1;}
-  .verso-cel{border:1px solid #000; padding:1.5mm 2mm; font-size:7.5px; display:flex; flex-direction:column; justify-content:center; gap:1mm; overflow:hidden;}
-  .verso-cel span{font-size:9px; font-weight:600;}
-  .verso-dpf{border:1px solid #000; border-top:none; padding:1.5mm 2mm; font-size:7.5px; display:flex; flex-direction:column; gap:1mm;}
-  .verso-dpf span{font-size:9px; font-weight:600;}
-  .verso-responsavel{text-align:center; font-weight:700; font-size:8px; letter-spacing:0.4px; margin-top:auto; padding-top:2mm;}
+  /* ---- FRENTE ----
+     Área da foto fixa em 3cm x 4cm (30mm x 40mm), como pedido. A logo
+     (uma só, nunca duplicada) fica no espaço branco ao lado da foto —
+     "frente-logo-wrap" tem a MESMA altura da área da foto (40mm) e
+     centraliza a logo dentro dela, o que alinha automaticamente o
+     centro vertical da logo com o centro vertical da foto, sem
+     precisar calcular isso manualmente. Logo maior que antes (52mm de
+     largura), sempre com height:auto — nunca estica nem deforma. */
+  .frente-topo{display:flex; align-items:center; justify-content:space-between; height:40mm;}
+  .frente-logo-wrap{flex:1; height:40mm; display:flex; align-items:center; justify-content:center;}
+  .frente-logo{width:52mm; height:auto; display:block;} /* proporção original preservada — nunca distorcida */
+  .frente-foto-espaco{width:30mm; height:40mm; border:1px dashed #666; flex-shrink:0;}
+  .frente-titulo{text-align:center; font-weight:700; font-size:14px; letter-spacing:0.4px; margin-top:auto; text-transform:uppercase;}
+  .frente-nome{font-weight:700; font-size:12px; text-align:center; word-break:break-word; line-height:1.25; margin-top:2mm; text-transform:uppercase;}
+  /* ---- VERSO ----
+     Fonte 12px em tudo. "SAMSEG SEGURANÇA PRIVADA" em white-space:nowrap
+     para nunca quebrar em duas linhas. Espaço visual entre o
+     cabeçalho e a grade de informações (margin-bottom no header).
+     grid-template-rows:repeat(3,1fr) garante matematicamente que as
+     3 linhas (Identidade/Data do Curso, CPF/Reciclagem, Nº DPF) têm
+     EXATAMENTE a mesma altura — não é um valor aproximado, é a
+     própria grade que reparte o espaço disponível em partes iguais. */
+  .verso-header{text-align:center; font-weight:800; font-size:12px; line-height:1.5; border-bottom:1px solid #000; padding-bottom:2mm; margin-bottom:4mm;}
+  .verso-header-empresa{white-space:nowrap;}
+  .verso-grid{display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(3,1fr); border:1px solid #000; flex:1;}
+  .verso-cel{border:1px solid #000; padding:1.5mm 2mm; font-size:12px; display:flex; flex-direction:column; justify-content:center; gap:1mm; overflow:hidden;}
+  .verso-cel span{font-size:12px; font-weight:600;}
+  .verso-cel.verso-dpf{grid-column:1 / 3;}
+  .verso-assinatura{margin-top:auto; padding-top:2mm; display:flex; flex-direction:column; align-items:center;}
+  .verso-assinatura-linha{border-top:1px solid #000; width:70%; margin-bottom:2mm;}
+  .verso-responsavel{text-align:center; font-weight:700; font-size:12px; letter-spacing:0.4px;}
   @media print{
     body{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
   }
