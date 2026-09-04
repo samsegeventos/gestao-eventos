@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 00:45';
+const APP_VERSION = '27/08/2026 01:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -375,17 +375,6 @@ function escapeHtml(s){ return (s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'
    nunca altera o dado gravado. Não usar para identificar/comparar
    colaboradores (isso continua por CPF/ID, nunca pelo nome). */
 function nomeExibicao(n){ return String(n||'').trim().toUpperCase(); }
-/* Verifica se um CPF já tem alguma informação operacional vinculada
-   ao evento (Pré-Escala, Escala Oficial) — usa os mesmos arrays já
-   carregados (interessados/staff), comparando CPF normalizado (só
-   dígitos) para não depender de formatação. Se houver vínculo, a
-   exclusão definitiva do cadastro é bloqueada — só Desautorizar. */
-function temVinculoOperacional(cpf){
-  const cpfNorm=String(cpf||'').replace(/\D/g,'');
-  const emInteressados=interessados.some(i=>String(i.cpf||'').replace(/\D/g,'')===cpfNorm);
-  const emStaff=staff.some(s=>String(s.cpf||'').replace(/\D/g,'')===cpfNorm);
-  return emInteressados || emStaff;
-}
 function formatDate(d){ if(!d) return '—'; const [y,m,day]=d.split('-'); return `${day}/${m}/${y}`; }
 function formatPeriodo(e){ if(!e) return '—'; if(e.dataFim && e.dataFim!==e.data) return `${formatDate(e.data)} – ${formatDate(e.dataFim)}`; return formatDate(e.data); }
 function todayISO(){
@@ -961,8 +950,8 @@ function renderPublic(alreadySent){
           }
           renderPublic(true);
         }catch(err){
-          console.error(err);
-          erroBox.textContent = err.message || 'Não foi possível confirmar sua participação. Tente novamente.';
+          console.error('Erro ao confirmar participação:', err);
+          erroBox.innerHTML=`<b>NÃO FOI POSSÍVEL CONFIRMAR A PARTICIPAÇÃO</b><br>${formatarErroSupabase(err)}`;
           btnConfirmar.disabled=false; btnConfirmar.textContent='Confirmar participação';
         }
       };
@@ -3133,13 +3122,25 @@ function attachCpfsAutorizadosRowHandlers(){
     btn.onclick=async ()=>{
       const cpf=btn.closest('tr').dataset.cpf;
       const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
-      if(temVinculoOperacional(cpf)){
-        showToast('Este colaborador já possui informações vinculadas ao evento. Para preservar escalas, checkout e dados financeiros, o cadastro não pode ser excluído diretamente — use Desautorizar.');
-        return;
+      /* Exclusão completa e em cascata (CPF Autorizado + Pré-Escala +
+         Escala Oficial + Escala por Dia, e também Banco de
+         Colaboradores se for Vigilante) — a decisão de permitir ou
+         não fica inteiramente com a RPC no servidor, que verifica
+         check-in/checkout de verdade antes de apagar qualquer coisa.
+         Não há mais checagem só no cliente aqui: os arrays locais
+         (interessados/staff) não têm como saber com segurança se já
+         existe check-in/checkout, então bloquear por aqui só
+         impediria exclusões legítimas sem proteger nada de verdade. */
+      if(!confirm(`ATENÇÃO!\n\nVocê está prestes a excluir TODOS os dados deste colaborador neste evento — CPF Autorizado, Pré-Escala, Escala Oficial e Escala por Dia. Se ele for Vigilante, também será removido do Banco de Colaboradores.\n\nSó é permitido se ele ainda não tiver check-in/check-out registrado neste evento.\n\nColaborador: ${nomeExibicao(atual&&atual.nome)||'(sem nome)'}\nCPF: ${formatCpf(cpf)}\n\nEsta ação não pode ser desfeita.`)) return;
+      const r=await chamarRpcGestor('excluir_colaborador_evento',{p_evento_id:currentEventId, p_cpf:cpf});
+      if(r.ok){
+        showToast('Cadastro excluído em todas as áreas do evento.');
+        await loadCpfsAutorizadosEvento();
+        await loadInteressadosForCurrent();
+        await loadStaffForCurrent();
+        await loadDiasEscalaPresenca();
+        renderShell();
       }
-      if(!confirm(`ATENÇÃO!\n\nVocê está prestes a excluir o cadastro:\n\n${nomeExibicao(atual&&atual.nome)||'(sem nome)'}\nCPF: ${formatCpf(cpf)}\n\nEsta ação não pode ser desfeita.`)) return;
-      const r=await chamarRpcGestor('excluir_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf});
-      if(r.ok){ showToast('Cadastro excluído.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
 }
