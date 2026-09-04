@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 01:30';
+const APP_VERSION = '27/08/2026 02:10';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -884,6 +884,33 @@ function renderPublic(alreadySent){
         return;
       }
 
+      resultado.innerHTML=`<div class="empty"><b>Verificando dados já cadastrados...</b></div>`;
+
+      /* Fluxo integrado desta rodada: só para Vigilantes (inclusive
+         líder, mesma classificação usada em todo o sistema). Consulta
+         o Banco de Colaboradores (RPC pública, só leitura) para
+         decidir quais campos de crachá ainda faltam — nunca pede de
+         novo o que já está completo e válido. Para as demais funções,
+         o formulário permanece exatamente como já era. */
+      const ehVigilante=baseDaFuncaoDisplay(normalizaFuncaoDisplay(registro.funcao))==='VIGILANTE';
+      let bancoExistente=null;
+      if(ehVigilante){
+        try{
+          const {data:bancoData,error:bancoErr}=await sb.rpc('buscar_dados_colaborador_banco',{p_cpf:cpfLimpo});
+          if(bancoErr) throw bancoErr;
+          bancoExistente=Array.isArray(bancoData) ? bancoData[0] : bancoData;
+        }catch(bancoErr){
+          /* Não bloqueia a confirmação por causa disso — na pior das
+             hipóteses, trata como se não houvesse cadastro ainda e
+             pede todos os campos do crachá (comportamento seguro). */
+          console.error('Falha ao consultar Banco de Colaboradores:', bancoErr);
+        }
+      }
+      const precisaIdentidade = ehVigilante && !(bancoExistente && bancoExistente.identidade);
+      const precisaDataCurso  = ehVigilante && !(bancoExistente && bancoExistente.data_curso);
+      const precisaNumeroDpf  = ehVigilante && !(bancoExistente && bancoExistente.numero_dpf);
+      const precisaReciclagem = ehVigilante && !(bancoExistente && bancoExistente.reciclagem && reciclagemValidaAteFinalEvento(bancoExistente.reciclagem, ev));
+
       resultado.innerHTML=`
         <div class="success-box">
           <div class="check">✓</div>
@@ -891,12 +918,32 @@ function renderPublic(alreadySent){
           <div class="ev-meta" style="margin-top:10px;"><b>Função autorizada:</b> ${escapeHtml(registro.funcao || '')}</div>
           <div class="field" style="margin-top:16px; text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nome completo</label>
-            <input type="text" id="intNome" value="${escapeHtml(registro.nome||'')}" placeholder="Seu nome completo">
+            <input type="text" id="intNome" value="${escapeHtml((bancoExistente&&bancoExistente.nome)||registro.nome||'')}" placeholder="Seu nome completo">
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Celular/WhatsApp (obrigatório a cada evento)</label>
-            <input type="text" id="intTelefone" placeholder="(00) 0 0000-0000" inputmode="numeric" maxlength="16">
+            <input type="text" id="intTelefone" value="${escapeHtml((bancoExistente&&bancoExistente.telefone)?formatTelefone(bancoExistente.telefone):'')}" placeholder="(00) 0 0000-0000" inputmode="numeric" maxlength="16">
           </div>
+          ${precisaIdentidade?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
+            <input type="text" id="intIdentidade" placeholder="MG12.345.678">
+          </div>`:''}
+          ${precisaDataCurso?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data do curso</label>
+            <input type="date" id="intDataCurso">
+          </div>`:''}
+          ${precisaReciclagem?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data da reciclagem</label>
+            <input type="date" id="intReciclagem">
+          </div>`:''}
+          ${precisaNumeroDpf?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
+            <input type="text" id="intNumeroDpf" placeholder="MG1234567/8901">
+          </div>`:''}
           <button class="btn btn-amber" id="btnConfirmarParticipacao" style="width:100%;padding:12px;margin-top:10px;">Confirmar participação</button>
           <div id="erroParticipacao" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
         </div>
@@ -914,13 +961,48 @@ function renderPublic(alreadySent){
         intNomeEl.value=intNomeEl.value.toUpperCase();
         intNomeEl.setSelectionRange(pos,pos);
       };
+      const intIdentidadeEl=document.getElementById('intIdentidade');
+      if(intIdentidadeEl) intIdentidadeEl.oninput=()=>maskIdentidadeInput(intIdentidadeEl);
+      const intNumeroDpfEl=document.getElementById('intNumeroDpf');
+      if(intNumeroDpfEl) intNumeroDpfEl.oninput=()=>maskNumeroDpfInput(intNumeroDpfEl);
 
       document.getElementById('btnConfirmarParticipacao').onclick=async ()=>{
         const nome=nomeExibicao(document.getElementById('intNome').value);
         const telefoneDigits=document.getElementById('intTelefone').value.replace(/\D/g,'');
         const erroBox=document.getElementById('erroParticipacao');
         const btnConfirmar=document.getElementById('btnConfirmarParticipacao');
+        erroBox.innerHTML='';
         if(telefoneDigits.length!==11){ erroBox.textContent='Informe um telefone celular válido.'; return; }
+
+        /* Campos extras de crachá (só quando exibidos nesta rodada) —
+           mesma ordem de validação já usada no link específico de
+           crachá: presença -> completude da máscara -> validade da
+           reciclagem -> só então salva. */
+        let identidade=null, dataCurso=null, reciclagem=null, numeroDpf=null;
+        if(precisaIdentidade){
+          identidade=formatIdentidadeMG(document.getElementById('intIdentidade').value);
+          if(!identidade){ erroBox.textContent='Informe a identidade.'; return; }
+          if(contarDigitos(identidade)<8){ erroBox.textContent='IDENTIDADE INCOMPLETA. PREENCHA TODOS OS NÚMEROS.'; return; }
+        }
+        if(precisaDataCurso){
+          dataCurso=document.getElementById('intDataCurso').value;
+          if(!dataCurso){ erroBox.textContent='DATA DO CURSO É OBRIGATÓRIA.'; return; }
+        }
+        if(precisaReciclagem){
+          reciclagem=document.getElementById('intReciclagem').value;
+          if(!reciclagem){ erroBox.textContent='DATA DA RECICLAGEM É OBRIGATÓRIA.'; return; }
+          if(!reciclagemValidaAteFinalEvento(reciclagem, ev)){
+            const dataFinal=ev.dataFim||ev.data;
+            erroBox.innerHTML=`<b>RECICLAGEM FORA DO PRAZO DE VALIDADE</b><br>DATA DA RECICLAGEM: ${formatDate(reciclagem)}<br>VALIDADE ATÉ: ${formatDate(somaUmAnoIso(reciclagem))}<br>O documento precisa continuar válido até ${formatDate(dataFinal)} (fim do evento).`;
+            return;
+          }
+        }
+        if(precisaNumeroDpf){
+          numeroDpf=formatNumeroDpfMG(document.getElementById('intNumeroDpf').value);
+          if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
+          if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
+        }
+
         btnConfirmar.disabled=true; btnConfirmar.textContent='Enviando...';
         try{
           const {data:pdata,error:perror}=await sb.rpc('registrar_participacao',{
@@ -947,6 +1029,27 @@ function renderPublic(alreadySent){
             /* Não bloqueia a confirmação do funcionário por causa disso;
                só registra no console para investigação do gestor. */
             console.error('Falha ao registrar na Pré-Escala:', preEscalaErr);
+          }
+          /* Fluxo integrado: se for Vigilante, salva também no Banco de
+             Colaboradores — mesma RPC já usada pelo link específico de
+             crachá, agora incluindo telefone. Campos não coletados
+             nesta rodada (já completos/válidos) vão como null: o
+             upsert já preserva o que existir, nunca apaga por causa de
+             um campo vazio. */
+          if(ehVigilante){
+            try{
+              const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha',{
+                p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
+                p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
+              });
+              if(erroBanco) throw erroBanco;
+            }catch(bancoErr){
+              /* Também não bloqueia a confirmação de participação —
+                 mas registra para investigação, já que o objetivo
+                 desta rodada é justamente popular o Banco de
+                 Colaboradores automaticamente. */
+              console.error('Falha ao salvar dados de crachá no Banco de Colaboradores:', bancoErr);
+            }
           }
           renderPublic(true);
         }catch(err){
@@ -2657,6 +2760,18 @@ function validarReciclagemParaEvento(dataReciclagemIso, ev){
   }
   return {valido:true, dataInicial, dataFinal, validadeFinal};
 }
+/* Regra específica do link PRINCIPAL do evento para Vigilantes (fluxo
+   integrado desta rodada): só verifica se a validade (reciclagem + 1
+   ano) cobre a DATA FINAL do evento — diferente de
+   validarReciclagemParaEvento() (que também bloqueia reciclagem
+   posterior à data inicial), que continua intocada e usada só no link
+   específico de crachá já existente. Não reaproveitei a mesma função
+   para não alterar uma regra já aprovada em outro fluxo. */
+function reciclagemValidaAteFinalEvento(dataReciclagemIso, ev){
+  if(!dataReciclagemIso) return false;
+  const dataFinal=ev.dataFim || ev.data;
+  return somaUmAnoIso(dataReciclagemIso) >= dataFinal;
+}
 async function loadCpfsAutorizadosEvento(){
   if(!currentEventId){ cpfsAutorizadosLista=[]; return; }
   const {data,error}=await sb.rpc('listar_cpfs_autorizados_evento',{p_evento_id:currentEventId});
@@ -2714,9 +2829,9 @@ function renderListaColaboradoresBanco(){
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
     <table>
-      <thead><tr><th>#</th><th>Nome</th><th>Função</th><th>CPF</th><th>Identidade</th><th>Data do curso</th><th>Reciclagem</th><th>Nº DPF</th><th>Status</th></tr></thead>
+      <thead><tr><th>#</th><th>Nome</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Identidade</th><th>Data do curso</th><th>Reciclagem</th><th>Nº DPF</th><th>Status</th></tr></thead>
       <tbody>
-        ${linhasComTituloDeGrupo(grupos, 9, (c,numero)=>{
+        ${linhasComTituloDeGrupo(grupos, 10, (c,numero)=>{
           const status=statusCrachaColaborador(c);
           return `
           <tr>
@@ -2724,11 +2839,12 @@ function renderListaColaboradoresBanco(){
             <td>${escapeHtml(nomeExibicao(c.nome))}</td>
             <td>${escapeHtml(c.funcao||'—')}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
+            <td class="mono">${c.telefone?formatTelefone(c.telefone):'—'}</td>
             <td>${escapeHtml(c.identidade||'—')}</td>
             <td class="mono">${c.data_curso?formatDate(c.data_curso):'—'}</td>
             <td class="mono">${c.reciclagem?formatDate(c.reciclagem):'—'}</td>
             <td>${escapeHtml(c.numero_dpf||'—')}</td>
-            <td><span class="badge ${status.completo?'pago':'pendente'}">${status.completo?'Dados completos':'Pendente'}</span></td>
+            <td>${status.completo?'<span class="badge pago">Dados completos</span>':'<span class="badge pendente">Pendente</span>'}</td>
           </tr>`;
         })}
       </tbody>
