@@ -272,7 +272,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 01:15';
+const APP_VERSION = '27/08/2026 01:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3027,6 +3027,7 @@ function renderCpfsAutorizadosTab(){
         <label>Função</label>
         ${funcoesEvento.length ? `
         <select id="novaFuncaoAutSelect">
+          <option value="">Selecione a função</option>
           ${funcoesEvento.map(f=>`<option value="${escapeHtml(f.funcao)}">${escapeHtml(f.funcao)}</option>`).join('')}
           <option value="__outra__">+ Outra função (digitar)</option>
         </select>
@@ -3040,7 +3041,16 @@ function renderCpfsAutorizadosTab(){
 }
 function attachCpfsAutorizadosHandlers(){
   const cpfInp=document.getElementById('novoCpfAut');
-  if(cpfInp) cpfInp.oninput=(e)=>maskCpfInput(e.target);
+  const selFuncao=document.getElementById('novaFuncaoAutSelect');
+  const txtFuncao=document.getElementById('novaFuncaoAutTexto');
+  if(cpfInp) cpfInp.oninput=(e)=>{
+    maskCpfInput(e.target);
+    /* Trocar/editar o CPF nunca pode manter uma função de uma
+       consulta anterior — sempre volta para "sem seleção", exigindo
+       escolha manual de novo. */
+    if(selFuncao) selFuncao.value='';
+    if(txtFuncao){ txtFuncao.value=''; if(selFuncao) txtFuncao.style.display='none'; }
+  };
   const nomeAutInp=document.getElementById('novoNomeAut');
   if(nomeAutInp) nomeAutInp.oninput=()=>{
     const pos=nomeAutInp.selectionStart;
@@ -3058,8 +3068,6 @@ function attachCpfsAutorizadosHandlers(){
       attachCpfsAutorizadosRowHandlers();
     }
   };
-  const selFuncao=document.getElementById('novaFuncaoAutSelect');
-  const txtFuncao=document.getElementById('novaFuncaoAutTexto');
   if(selFuncao && txtFuncao){
     selFuncao.onchange=()=>{ txtFuncao.style.display = selFuncao.value==='__outra__' ? '' : 'none'; };
   }
