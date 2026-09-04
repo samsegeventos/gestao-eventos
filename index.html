@@ -42,6 +42,13 @@
   .grupo-funcao-titulo:first-of-type{margin-top:4px;}
   .grupo-funcao-count{color:var(--muted); font-weight:400; text-transform:none;}
   .linha-titulo-grupo td{background:rgba(232,163,61,0.07); font-weight:700; font-size:12.5px; text-transform:uppercase; letter-spacing:0.3px; color:var(--amber); padding:8px 10px; border-bottom:1px solid var(--line);}
+  /* Linha inteira destacada quando o colaborador já concluiu o
+     cadastro pelo link público (não confundir com "autorizado" nem
+     com presença em Pré-Escala/Escala — ver comentário no JS). Usa o
+     teal do tema, na mesma família visual do badge "pago" já
+     existente, para não introduzir uma cor nova ao sistema. */
+  tbody tr.linha-cadastro-concluido td{background:rgba(79,179,169,0.10);}
+  tbody tr.linha-cadastro-concluido:hover td{background:rgba(79,179,169,0.16);}
   .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
   .badge.aberto{color:var(--amber); border-color:var(--amber); background:rgba(232,163,61,0.08);}
   .badge.finalizado{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
@@ -272,7 +279,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 02:10';
+const APP_VERSION = '27/08/2026 02:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -599,6 +606,10 @@ let fechamentoDados = [];
 /* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
 let cpfsAutorizadosBusca = '';
+let preEscalaBusca = '';
+let escalaOficialBusca = '';
+let escalaHorarioBusca = '';
+let checkoutBusca = '';
 /* ---- Banco de Colaboradores (novo) ---- */
 let colaboradoresBanco = [];
 let colaboradoresBuscaNome = '';
@@ -833,6 +844,9 @@ function renderPublic(alreadySent){
     </div>
   `;
 
+  const intCpfEl=document.getElementById('intCpf');
+  intCpfEl.oninput=()=>maskCpfInput(intCpfEl);
+
   document.getElementById('btnVerificarCpf').onclick=async ()=>{
 
     const cpf=document.getElementById('intCpf').value.trim();
@@ -1029,6 +1043,19 @@ function renderPublic(alreadySent){
             /* Não bloqueia a confirmação do funcionário por causa disso;
                só registra no console para investigação do gestor. */
             console.error('Falha ao registrar na Pré-Escala:', preEscalaErr);
+          }
+          /* Marca em CPFs Autorizados que este colaborador realmente
+             concluiu o cadastro pelo link (nunca por só existir em
+             interessados/staff/aprovação) e atualiza o nome completo
+             que ele digitou — RPC própria, restrita (só atualiza um
+             registro JÁ autorizado, nunca cria/autoriza CPF novo nem
+             muda função). Também não bloqueia a confirmação em caso
+             de falha. */
+          try{
+            const {error:erroConcluido}=await sb.rpc('marcar_cadastro_concluido_cpf_autorizado',{p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome});
+            if(erroConcluido) throw erroConcluido;
+          }catch(concluidoErr){
+            console.error('Falha ao marcar cadastro concluído em CPFs Autorizados:', concluidoErr);
           }
           /* Fluxo integrado: se for Vigilante, salva também no Banco de
              Colaboradores — mesma RPC já usada pelo link específico de
@@ -1233,6 +1260,16 @@ function renderPublicCracha(){
             p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
           });
           if(erroSalvar) throw erroSalvar;
+
+          /* Mesma marcação de "cadastro concluído" + atualização de
+             nome em CPFs Autorizados usada no link principal — não
+             bloqueia em caso de falha. */
+          try{
+            const {error:erroConcluido}=await sb.rpc('marcar_cadastro_concluido_cpf_autorizado',{p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome});
+            if(erroConcluido) throw erroConcluido;
+          }catch(concluidoErr){
+            console.error('Falha ao marcar cadastro concluído em CPFs Autorizados:', concluidoErr);
+          }
 
           resultado.innerHTML=`<div class="success-box"><div class="check">✓</div><div class="ev-name">DADOS SALVOS COM SUCESSO!</div><div class="ev-meta" style="margin-bottom:0;">Seu cadastro para o crachá foi atualizado.</div></div>`;
         }catch(err){
@@ -1963,8 +2000,8 @@ function renderPreEscala(){
       Para o link ficar clicável no WhatsApp, este arquivo HTML precisa estar hospedado em um endereço da internet (com https://). Aberto direto do computador (file://), o endereço gerado fica inválido. Hospede o arquivo (ex: GitHub Pages, Netlify) e reabra por esse endereço para os links funcionarem.
     </div>` : '';
   const statusLink = eventLinkStatus(currentEventId);
-  const pendentes = interessados.filter(p=>(p.status||'pendente')==='pendente');
-  const decididos = interessados.filter(p=>(p.status||'pendente')!=='pendente');
+  const pendentes = filtrarPorNomeOuCpf(interessados.filter(p=>(p.status||'pendente')==='pendente'), preEscalaBusca, p=>p.nome, p=>p.cpf);
+  const decididos = filtrarPorNomeOuCpf(interessados.filter(p=>(p.status||'pendente')!=='pendente'), preEscalaBusca, p=>p.nome, p=>p.cpf);
   return `
     <div class="card-title">Convocação — quem tem interesse</div>
     <div class="card-sub">Compartilhe o link abaixo com a equipe. Quem preencher o formulário (nome, CPF e função) registra o interesse; a confirmação final é feita na Escala Oficial.</div>
@@ -1978,6 +2015,7 @@ function renderPreEscala(){
       <div class="field" style="flex:1;"><label>Link para o candidato consultar o status da candidatura</label><input type="text" readonly value="${statusLink}" id="linkFieldStatus"></div>
       <button class="btn btn-ghost btn-sm" id="btnCopyLinkStatus" style="align-self:flex-end;">Copiar link</button>
     </div>
+    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaPreEscala" placeholder="Buscar por nome ou CPF" value="${escapeHtml(preEscalaBusca)}"></div>
     ${pendentes.length ? (()=>{
       const grupos=agruparPorFuncaoPrincipal(pendentes, p=>p.funcao, p=>p.nome);
       return `
@@ -2022,13 +2060,16 @@ function renderEscalaOficial(){
       <div class="field"><label>Função</label><input type="text" id="newFuncao" placeholder="Ex: Vigilante"></div>
       <button class="btn btn-amber" id="btnAddStaff">+ Adicionar manualmente</button>
     </div>
+    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaOficial" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaOficialBusca)}"></div>
     ${staff.length ? `
     <div style="margin-bottom:14px;">
       <button class="btn btn-teal btn-sm" id="btnNotifyAll">Notificar convocação no WhatsApp (${comTelefone.length} com telefone)</button>
       ${comTelefone.length<staff.length ? `<span style="color:var(--muted); font-size:12px; margin-left:8px;">${staff.length-comTelefone.length} colaborador(es) sem telefone cadastrado não serão notificados.</span>` : ''}
     </div>` : ''}
-    ${staff.length ? (()=>{
-      const grupos=agruparPorFuncaoPrincipal(staff, c=>c.funcao, c=>c.nome);
+    ${(()=>{
+      const staffFiltrado=filtrarPorNomeOuCpf(staff, escalaOficialBusca, c=>c.nome, c=>c.cpf);
+      if(!staffFiltrado.length) return staff.length ? `<div class="empty"><b>Nenhum resultado para essa busca</b></div>` : `<div class="empty"><b>Ninguém confirmado ainda</b>Aprove um interessado na Pré-Escala ou adicione manualmente.</div>`;
+      const grupos=agruparPorFuncaoPrincipal(staffFiltrado, c=>c.funcao, c=>c.nome);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
         <table>
@@ -2047,7 +2088,7 @@ function renderEscalaOficial(){
           </tbody>
         </table>
       `;
-    })() : `<div class="empty"><b>Ninguém confirmado ainda</b>Aprove um interessado na Pré-Escala ou adicione manualmente.</div>`}
+    })()}
   `;
 }
 
@@ -2141,8 +2182,11 @@ function renderEscalaHorarioDias(){
   return `
     <div class="card-title">Escala por dia</div>
     <div class="card-sub">Marque em quais dias específicos cada colaborador está previsto para trabalhar. Lista de todos os dias do evento lado a lado — não há um único "dia selecionado" nesta tabela.</div>
+    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaHorario" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaHorarioBusca)}"></div>
     ${(()=>{
-      const grupos=agruparPorFuncaoPrincipal(listaExibida, p=>p.funcao, p=>p.nome);
+      const listaFiltrada=filtrarPorNomeOuCpf(listaExibida, escalaHorarioBusca, p=>p.nome, p=>p.cpf);
+      if(!listaFiltrada.length) return `<div class="empty"><b>Nenhum resultado para essa busca</b></div>`;
+      const grupos=agruparPorFuncaoPrincipal(listaFiltrada, p=>p.funcao, p=>p.nome);
       const colspanEscala=2+eventoDias.length;
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
@@ -2176,6 +2220,8 @@ function renderEscalaHorarioDias(){
   `;
 }
 function attachEscalaHorarioHandlers(){
+  const buscaEscalaHorarioInp=document.getElementById('buscaEscalaHorario');
+  if(buscaEscalaHorarioInp) buscaEscalaHorarioInp.oninput=()=>{ escalaHorarioBusca=buscaEscalaHorarioInp.value; renderShell(); };
   document.querySelectorAll('.btn-editar-horario-dia').forEach(btn=>{
     btn.onclick=async ()=>{
       const tr=btn.closest('tr'); const diaId=Number(tr.dataset.diaId);
@@ -2217,8 +2263,11 @@ function renderCheckoutDias(){
         ${eventoDias.map(d=>`<option value="${d.id}" ${d.id===diaId?'selected':''}>${formatDate(d.data)} (${(d.hora_inicio||'').slice(0,5)}–${(d.hora_fim||'').slice(0,5)})</option>`).join('')}
       </select>
     </div>
-    ${escaladosNoDia.length ? (()=>{
-      const grupos=agruparPorFuncaoPrincipal(escaladosNoDia, p=>p.funcao, p=>p.nome);
+    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaCheckout" placeholder="Buscar por nome ou CPF" value="${escapeHtml(checkoutBusca)}"></div>
+    ${(()=>{
+      const escaladosFiltrados=filtrarPorNomeOuCpf(escaladosNoDia, checkoutBusca, p=>p.nome, p=>p.cpf);
+      if(!escaladosFiltrados.length) return escaladosNoDia.length ? `<div class="empty"><b>Nenhum resultado para essa busca</b></div>` : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`;
+      const grupos=agruparPorFuncaoPrincipal(escaladosFiltrados, p=>p.funcao, p=>p.nome);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
         <table>
@@ -2257,13 +2306,15 @@ function renderCheckoutDias(){
           </tbody>
         </table>
       `;
-    })() : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`}
+    })()}
   `;
 }
 let horasExtraAguardandoQtd = new Set(); // ids (pid) com o campo de quantidade aberto na tela, transitório
 function attachCheckoutHandlers(){
   const sel=document.getElementById('selDiaPresenca');
   if(sel) sel.onchange=()=>{ diaSelecionadoPresenca=Number(sel.value); horasExtraAguardandoQtd.clear(); renderShell(); };
+  const buscaCheckoutInp=document.getElementById('buscaCheckout');
+  if(buscaCheckoutInp) buscaCheckoutInp.oninput=()=>{ checkoutBusca=buscaCheckoutInp.value; renderShell(); };
   document.querySelectorAll('.btn-entrada').forEach(btn=>{
     btn.onclick=async ()=>{
       const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
@@ -3089,6 +3140,25 @@ function attachImpressaoCrachasHandlers(){
     }
   };
 }
+/* Helper genérico de busca por nome/CPF, reutilizado nas abas que
+   ainda não tinham busca própria (Pré-Escala, Escala Oficial, Escala
+   & Horário por Dia, Checkout por Dia) — mesma regra da busca já
+   existente em CPFs Autorizados/Banco de Colaboradores: ignora
+   maiúsculas/minúsculas e pontuação, localiza parte do nome ou do
+   CPF. Só filtra a exibição — nunca altera o array original. */
+function filtrarPorNomeOuCpf(lista, busca, getNome, getCpf){
+  const termo=(busca||'').trim();
+  if(!termo) return lista;
+  const termoLower=termo.toLowerCase();
+  const termoDigits=termo.replace(/\D/g,'');
+  return lista.filter(item=>{
+    const nome=(getNome(item)||'').toLowerCase();
+    const cpf=(getCpf(item)||'').replace(/\D/g,'');
+    const matchNome = nome.includes(termoLower);
+    const matchCpf = termoDigits.length>0 && cpf.includes(termoDigits);
+    return matchNome || matchCpf;
+  });
+}
 function filtrarCpfsAutorizados(){
   const buscaDigits=cpfsAutorizadosBusca.replace(/\D/g,'');
   const buscaTexto=cpfsAutorizadosBusca.trim().toLowerCase();
@@ -3110,10 +3180,10 @@ function renderCpfsAutorizadosLista(lista){
       <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
       <tbody>
         ${linhasComTituloDeGrupo(grupos, 6, (c,numero)=>`
-          <tr data-cpf="${c.cpf}">
+          <tr data-cpf="${c.cpf}" class="${c.cadastro_concluido?'linha-cadastro-concluido':''}">
             <td class="mono">${numero}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
-            <td>${escapeHtml(nomeExibicao(c.nome)||'—')}</td>
+            <td>${escapeHtml(nomeExibicao(c.nome)||'—')}${c.cadastro_concluido?' <span class="badge pago" style="margin-left:4px;">Cadastro concluído</span>':''}</td>
             <td>${escapeHtml(c.funcao||'—')}</td>
             <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
             <td>
@@ -3423,6 +3493,11 @@ function attachDetailHandlers(){
   if(linkBtn) linkBtn.onclick=()=>copyText(eventLink(currentEventId));
   const linkBtnStatus=document.getElementById('btnCopyLinkStatus');
   if(linkBtnStatus) linkBtnStatus.onclick=()=>copyText(eventLinkStatus(currentEventId));
+
+  const buscaPreEscalaInp=document.getElementById('buscaPreEscala');
+  if(buscaPreEscalaInp) buscaPreEscalaInp.oninput=()=>{ preEscalaBusca=buscaPreEscalaInp.value; renderShell(); };
+  const buscaEscalaOficialInp=document.getElementById('buscaEscalaOficial');
+  if(buscaEscalaOficialInp) buscaEscalaOficialInp.oninput=()=>{ escalaOficialBusca=buscaEscalaOficialInp.value; renderShell(); };
 
   const btnNewFuncaoEvento=document.getElementById('btnNewFuncaoEvento');
   if(btnNewFuncaoEvento) btnNewFuncaoEvento.onclick=()=>openFuncaoEventoForm();
