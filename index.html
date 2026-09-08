@@ -49,6 +49,11 @@
      existente, para não introduzir uma cor nova ao sistema. */
   tbody tr.linha-cadastro-concluido td{background:rgba(79,179,169,0.10);}
   tbody tr.linha-cadastro-concluido:hover td{background:rgba(79,179,169,0.16);}
+  /* Modal simples para o formulário de Novo/Editar Colaborador do
+     Banco de Colaboradores — segue as mesmas variáveis de cor/painel
+     já usadas no resto do sistema, nenhuma cor nova introduzida. */
+  .modal-overlay{position:fixed; inset:0; background:rgba(0,0,0,0.55); display:flex; align-items:center; justify-content:center; z-index:1000; padding:20px;}
+  .modal-box{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px; width:100%; max-width:440px; max-height:90vh; overflow-y:auto;}
   .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:11px; font-weight:700; letter-spacing:0.4px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; border:1.5px solid;}
   .badge.aberto{color:var(--amber); border-color:var(--amber); background:rgba(232,163,61,0.08);}
   .badge.finalizado{color:var(--teal); border-color:var(--teal); background:rgba(79,179,169,0.08);}
@@ -279,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 03:15';
+const APP_VERSION = '27/08/2026 04:35';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -614,6 +619,7 @@ let checkoutBusca = '';
 let colaboradoresBanco = [];
 let colaboradoresBuscaNome = '';
 let colaboradoresBuscaCpf = '';
+let colaboradoresSubaba = 'vigilantes'; // 'vigilantes' | 'brigadistas' | 'demais'
 let crachaSelecionados = new Set(); // participacao/id de staff selecionados para impressão, dentro do evento atual
 let subTab = 'preescala';
 let section = 'dashboard';    // dashboard | clientes | eventos | evento | pagamentos | relatorios | interesse
@@ -924,6 +930,8 @@ function renderPublic(alreadySent){
       const precisaDataCurso  = ehVigilante && !(bancoExistente && bancoExistente.data_curso);
       const precisaNumeroDpf  = ehVigilante && !(bancoExistente && bancoExistente.numero_dpf);
       const precisaReciclagem = ehVigilante && !(bancoExistente && bancoExistente.reciclagem && reciclagemValidaAteFinalEvento(bancoExistente.reciclagem, ev));
+      const precisaCidade     = ehVigilante && !(bancoExistente && bancoExistente.cidade);
+      const precisaGrandesEventos = ehVigilante && !(bancoExistente && (bancoExistente.grandes_eventos===true || bancoExistente.grandes_eventos===false));
 
       resultado.innerHTML=`
         <div class="success-box">
@@ -940,7 +948,7 @@ function renderPublic(alreadySent){
           </div>
           ${precisaIdentidade?`
           <div class="field" style="text-align:left;">
-            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">RG</label>
             <input type="text" id="intIdentidade" placeholder="MG12.345.678">
           </div>`:''}
           ${precisaDataCurso?`
@@ -952,6 +960,20 @@ function renderPublic(alreadySent){
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data da reciclagem</label>
             <input type="date" id="intReciclagem">
+          </div>`:''}
+          ${precisaCidade?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Cidade</label>
+            <input type="text" id="intCidade" placeholder="Sua cidade">
+          </div>`:''}
+          ${precisaGrandesEventos?`
+          <div class="field" style="text-align:left;">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Grandes eventos</label>
+            <select id="intGrandesEventos">
+              <option value="">Selecione</option>
+              <option value="sim">Sim</option>
+              <option value="nao">Não</option>
+            </select>
           </div>`:''}
           ${precisaNumeroDpf?`
           <div class="field" style="text-align:left;">
@@ -1007,7 +1029,7 @@ function renderPublic(alreadySent){
           if(!reciclagem){ erroBox.textContent='DATA DA RECICLAGEM É OBRIGATÓRIA.'; return; }
           if(!reciclagemValidaAteFinalEvento(reciclagem, ev)){
             const dataFinal=ev.dataFim||ev.data;
-            erroBox.innerHTML=`<b>RECICLAGEM FORA DO PRAZO DE VALIDADE</b><br>DATA DA RECICLAGEM: ${formatDate(reciclagem)}<br>VALIDADE ATÉ: ${formatDate(somaUmAnoIso(reciclagem))}<br>O documento precisa continuar válido até ${formatDate(dataFinal)} (fim do evento).`;
+            erroBox.innerHTML=`<b>RECICLAGEM FORA DO PRAZO DE VALIDADE</b><br>DATA DA RECICLAGEM: ${formatDate(reciclagem)}<br>VALIDADE ATÉ: ${formatDate(somaDoisAnosIso(reciclagem))}<br>O documento precisa continuar válido até ${formatDate(dataFinal)} (fim do evento).`;
             return;
           }
         }
@@ -1015,6 +1037,16 @@ function renderPublic(alreadySent){
           numeroDpf=formatNumeroDpfMG(document.getElementById('intNumeroDpf').value);
           if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
           if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
+        }
+        let cidade=null, grandesEventos=null;
+        if(precisaCidade){
+          cidade=document.getElementById('intCidade').value.trim();
+          if(!cidade){ erroBox.textContent='Informe a cidade.'; return; }
+        }
+        if(precisaGrandesEventos){
+          const valorGrandesEventos=document.getElementById('intGrandesEventos').value;
+          if(!valorGrandesEventos){ erroBox.textContent='Selecione se participa de grandes eventos.'; return; }
+          grandesEventos = valorGrandesEventos==='sim';
         }
 
         btnConfirmar.disabled=true; btnConfirmar.textContent='Enviando...';
@@ -1067,7 +1099,8 @@ function renderPublic(alreadySent){
             try{
               const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha',{
                 p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
-                p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
+                p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf,
+                p_cidade:cidade, p_grandes_eventos:grandesEventos
               });
               if(erroBanco) throw erroBanco;
             }catch(bancoErr){
@@ -2866,18 +2899,31 @@ function formatarErroSupabase(err){
   if(partes.length) return partes.join('<br>');
   return 'MOTIVO: ERRO INESPERADO AO PROCESSAR O CADASTRO.';
 }
-/* Reciclagem tem validade de 1 ano a partir da própria data e precisa
-   cobrir TODO o período do evento (da primeira à última data
-   cadastrada) — comparação por string ISO (YYYY-MM-DD), que já ordena
-   cronologicamente sem precisar de objetos Date/fuso horário. */
-function somaUmAnoIso(isoDate){
+/* Curso e reciclagem têm validade de 2 ANOS a partir da própria data
+   (alterado nesta rodada — antes era 1 ano) e precisam cobrir TODO o
+   período do evento (da primeira à última data cadastrada) —
+   comparação por string ISO (YYYY-MM-DD), que já ordena
+   cronologicamente sem precisar de objetos Date/fuso horário, e trata
+   ano bissexto corretamente porque a soma de anos preserva mês/dia
+   originais (ex: 2024-02-29 + 2 = 2026-02-29 é uma data inválida no
+   calendário — ver tratamento abaixo). */
+function somaDoisAnosIso(isoDate){
   const [y,m,d]=isoDate.split('-');
-  return `${String(Number(y)+1).padStart(4,'0')}-${m}-${d}`;
+  const anoDestino=Number(y)+2;
+  /* 29/02 cai em ano bissexto; se o ano de destino (+2) não for
+     bissexto, não existe 29/02 nele — usamos 28/02 nesse caso
+     específico, em vez de deixar a string virar uma data inválida
+     (ex: "2026-02-29") que quebraria comparações posteriores. */
+  const bissexto=(a)=>(a%4===0 && a%100!==0) || a%400===0;
+  if(m==='02' && d==='29' && !bissexto(anoDestino)){
+    return `${String(anoDestino).padStart(4,'0')}-02-28`;
+  }
+  return `${String(anoDestino).padStart(4,'0')}-${m}-${d}`;
 }
 function validarReciclagemParaEvento(dataReciclagemIso, ev){
   const dataInicial=ev.data;
   const dataFinal=ev.dataFim || ev.data;
-  const validadeFinal=somaUmAnoIso(dataReciclagemIso);
+  const validadeFinal=somaDoisAnosIso(dataReciclagemIso);
   if(dataReciclagemIso > dataInicial){
     return {valido:false, dataInicial, dataFinal, validadeFinal, motivo:'posterior'};
   }
@@ -2887,16 +2933,16 @@ function validarReciclagemParaEvento(dataReciclagemIso, ev){
   return {valido:true, dataInicial, dataFinal, validadeFinal};
 }
 /* Regra específica do link PRINCIPAL do evento para Vigilantes (fluxo
-   integrado desta rodada): só verifica se a validade (reciclagem + 1
-   ano) cobre a DATA FINAL do evento — diferente de
-   validarReciclagemParaEvento() (que também bloqueia reciclagem
-   posterior à data inicial), que continua intocada e usada só no link
-   específico de crachá já existente. Não reaproveitei a mesma função
-   para não alterar uma regra já aprovada em outro fluxo. */
+   integrado): só verifica se a validade (reciclagem + 2 anos) cobre a
+   DATA FINAL do evento — diferente de validarReciclagemParaEvento()
+   (que também bloqueia reciclagem posterior à data inicial), que
+   continua intocada e usada só no link específico de crachá já
+   existente. Não reaproveitei a mesma função para não alterar uma
+   regra já aprovada em outro fluxo. */
 function reciclagemValidaAteFinalEvento(dataReciclagemIso, ev){
   if(!dataReciclagemIso) return false;
   const dataFinal=ev.dataFim || ev.data;
-  return somaUmAnoIso(dataReciclagemIso) >= dataFinal;
+  return somaDoisAnosIso(dataReciclagemIso) >= dataFinal;
 }
 async function loadCpfsAutorizadosEvento(){
   if(!currentEventId){ cpfsAutorizadosLista=[]; return; }
@@ -2919,60 +2965,82 @@ function buscarColaboradorPorCpf(cpf){
   const norm=String(cpf||'').replace(/\D/g,'');
   return colaboradoresBanco.find(c=>String(c.cpf||'').replace(/\D/g,'')===norm) || null;
 }
-function filtrarColaboradoresBanco(){
+function filtrarColaboradoresBanco(lista){
   const buscaDigits=(colaboradoresBuscaCpf||colaboradoresBuscaNome).replace(/\D/g,'');
   const buscaTexto=colaboradoresBuscaNome.trim().toLowerCase();
-  if(!colaboradoresBuscaNome.trim() && !colaboradoresBuscaCpf.trim()) return colaboradoresBanco;
-  return colaboradoresBanco.filter(c=>{
+  if(!colaboradoresBuscaNome.trim() && !colaboradoresBuscaCpf.trim()) return lista;
+  return lista.filter(c=>{
     const matchCpf = buscaDigits && String(c.cpf||'').replace(/\D/g,'').includes(buscaDigits);
     const matchNome = buscaTexto && (c.nome||'').toLowerCase().includes(buscaTexto);
     return matchCpf || matchNome;
   });
 }
+/* Classificação por subaba — reaproveita exatamente a mesma
+   normalização/base já usada em todo o sistema (baseDaFuncaoDisplay +
+   normalizaFuncaoDisplay), então "VIGILANTE LÍDER DE EQUIPE" continua
+   caindo em Vigilantes sem nenhuma lógica nova. Nada aqui altera a
+   função armazenada — só decide em qual subaba o colaborador aparece. */
+function classificarColaboradorBanco(c){
+  const base=baseDaFuncaoDisplay(normalizaFuncaoDisplay(c.funcao||''));
+  if(base==='VIGILANTE') return 'vigilantes';
+  if(base==='BRIGADISTA') return 'brigadistas';
+  return 'demais';
+}
 function renderBancoColaboradores(main){
+  const contagens={vigilantes:0, brigadistas:0, demais:0};
+  colaboradoresBanco.forEach(c=>{ contagens[classificarColaboradorBanco(c)]++; });
   main.innerHTML=`
-    <div class="card-title">Banco de Colaboradores</div>
-    <div class="card-sub">Cadastro central e permanente — um único registro por CPF, reaproveitado em todos os eventos em que a pessoa trabalhar.</div>
+    <div class="card-title">Banco de Colaboradores — Consulta</div>
+    <div class="card-sub">Cadastro central e permanente — um único registro por CPF, reaproveitado em todos os eventos em que a pessoa trabalhar. Os dados são preenchidos automaticamente pelos links públicos dos eventos; esta tela é só para consulta.</div>
     <div class="panel">
-      <div class="add-row">
+      <div class="add-row" style="align-items:center;">
         <div class="field"><label>Buscar por nome</label><input type="text" id="buscaColaboradorNome" placeholder="Nome" value="${escapeHtml(colaboradoresBuscaNome)}"></div>
         <div class="field"><label>Buscar por CPF</label><input type="text" id="buscaColaboradorCpf" placeholder="000.000.000-00" maxlength="14" value="${escapeHtml(colaboradoresBuscaCpf)}"></div>
       </div>
-      ${!gestorUnlocked ? lockScreenHtml('O Banco de Colaboradores só fica visível para o gestor.') : renderListaColaboradoresBanco()}
+      ${!gestorUnlocked ? lockScreenHtml('O Banco de Colaboradores só fica visível para o gestor.') : `
+      <div class="subtabs" style="margin-top:6px;">
+        <div class="subtab ${colaboradoresSubaba==='vigilantes'?'active':''}" data-subaba="vigilantes">Vigilantes<span class="count">${contagens.vigilantes}</span></div>
+        <div class="subtab ${colaboradoresSubaba==='brigadistas'?'active':''}" data-subaba="brigadistas">Brigadistas<span class="count">${contagens.brigadistas}</span></div>
+        <div class="subtab ${colaboradoresSubaba==='demais'?'active':''}" data-subaba="demais">Demais Funções<span class="count">${contagens.demais}</span></div>
+      </div>
+      <div id="colaboradoresBancoLista">${renderListaColaboradoresBanco()}</div>
+      `}
     </div>
   `;
   attachBancoColaboradoresHandlers();
 }
 function renderListaColaboradoresBanco(){
-  const lista=filtrarColaboradoresBanco();
+  const daSubaba=colaboradoresBanco.filter(c=>classificarColaboradorBanco(c)===colaboradoresSubaba);
+  const lista=filtrarColaboradoresBanco(daSubaba);
   if(!lista.length){
-    return `<div class="empty"><b>${(colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim())?'Nenhum resultado para essa busca':'Nenhum colaborador cadastrado ainda'}</b>${(colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim())?'':'Os cadastros chegam pelo link de crachá de cada evento.'}</div>`;
+    const buscaAtiva=colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim();
+    return `<div class="empty"><b>${buscaAtiva?'Nenhum resultado para essa busca':'Nenhum colaborador nesta categoria ainda'}</b>${buscaAtiva?'':'Cadastre manualmente ou aguarde o preenchimento pelo link do evento.'}</div>`;
   }
-  /* Mesma lógica de agrupamento já usada no resto do sistema — líder
-     junto da função principal, líderes primeiro, ordem oficial das
-     funções — nada novo foi inventado aqui. */
-  const grupos=agruparPorFuncaoPrincipal(lista, c=>c.funcao, c=>c.nome);
+  /* Ordem de colunas EXATA pedida: Nome, CPF, RG, Data do Curso,
+     Reciclagem, Cidade, Grandes Eventos, Nº DPF, Telefone — sem a
+     coluna Função aqui (ela continua armazenada e usada para a
+     classificação acima, só não ocupa coluna nesta listagem).
+     "identidade" já é o RG do colaborador (reaproveitado, sem criar
+     campo duplicado — só a apresentação virou "RG"). Nº DPF fica
+     imediatamente antes de Telefone, como pedido. */
+  const nomesOrdenados=[...lista].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   return `
-    ${renderResumoQuantidadesFuncao(grupos)}
     <table>
-      <thead><tr><th>#</th><th>Nome</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Identidade</th><th>Data do curso</th><th>Reciclagem</th><th>Nº DPF</th><th>Status</th></tr></thead>
+      <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data do curso</th><th>Reciclagem</th><th>Cidade</th><th>Grandes eventos</th><th>Nº DPF</th><th>Telefone</th></tr></thead>
       <tbody>
-        ${linhasComTituloDeGrupo(grupos, 10, (c,numero)=>{
-          const status=statusCrachaColaborador(c);
-          return `
-          <tr>
-            <td class="mono">${numero}</td>
+        ${nomesOrdenados.map((c,i)=>`
+          <tr data-cpf="${c.cpf}">
+            <td class="mono">${i+1}</td>
             <td>${escapeHtml(nomeExibicao(c.nome))}</td>
-            <td>${escapeHtml(c.funcao||'—')}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
-            <td class="mono">${c.telefone?formatTelefone(c.telefone):'—'}</td>
             <td>${escapeHtml(c.identidade||'—')}</td>
             <td class="mono">${c.data_curso?formatDate(c.data_curso):'—'}</td>
             <td class="mono">${c.reciclagem?formatDate(c.reciclagem):'—'}</td>
+            <td>${escapeHtml(c.cidade||'—')}</td>
+            <td>${c.grandes_eventos===true?'Sim':(c.grandes_eventos===false?'Não':'—')}</td>
             <td>${escapeHtml(c.numero_dpf||'—')}</td>
-            <td>${status.completo?'<span class="badge pago">Dados completos</span>':'<span class="badge pendente">Pendente</span>'}</td>
-          </tr>`;
-        })}
+            <td class="mono">${c.telefone?formatTelefone(c.telefone):'—'}</td>
+          </tr>`).join('')}
       </tbody>
     </table>
   `;
@@ -2980,8 +3048,153 @@ function renderListaColaboradoresBanco(){
 function attachBancoColaboradoresHandlers(){
   const inpNome=document.getElementById('buscaColaboradorNome');
   const inpCpf=document.getElementById('buscaColaboradorCpf');
-  if(inpNome) inpNome.oninput=()=>{ colaboradoresBuscaNome=inpNome.value; renderShell(); };
-  if(inpCpf) inpCpf.oninput=(e)=>{ maskCpfInput(e.target); colaboradoresBuscaCpf=inpCpf.value; renderShell(); };
+  if(inpNome) inpNome.oninput=()=>{
+    colaboradoresBuscaNome=inpNome.value;
+    const lista=document.getElementById('colaboradoresBancoLista');
+    if(lista){ lista.innerHTML=renderListaColaboradoresBanco(); attachColaboradoresBancoListaHandlers(); }
+  };
+  if(inpCpf) inpCpf.oninput=(e)=>{
+    maskCpfInput(e.target);
+    colaboradoresBuscaCpf=inpCpf.value;
+    const lista=document.getElementById('colaboradoresBancoLista');
+    if(lista){ lista.innerHTML=renderListaColaboradoresBanco(); attachColaboradoresBancoListaHandlers(); }
+  };
+  document.querySelectorAll('.subtab[data-subaba]').forEach(t=>{
+    t.onclick=()=>{ colaboradoresSubaba=t.dataset.subaba; renderShell(); };
+  });
+  attachColaboradoresBancoListaHandlers();
+}
+/* Banco de Colaboradores é somente consulta por enquanto — os botões
+   "+ Novo Colaborador" e "Editar" foram removidos da renderização
+   (não há mais nenhum ponto de entrada na interface para
+   abrirFormularioColaboradorBanco()). O formulário e as RPCs de
+   cadastro/edição continuam existindo no sistema, intactos — são
+   usados pelos fluxos públicos (link do evento/crachá), que devem
+   continuar podendo criar/atualizar colaboradores normalmente. Só a
+   edição MANUAL pela tela administrativa fica indisponível. */
+function attachColaboradoresBancoListaHandlers(){
+}
+/* ================= NOVO/EDITAR COLABORADOR (gestor) =================
+   CPF é a chave — normalizado para comparar. Ao editar um cadastro
+   existente, o CPF fica travado (não se muda a identidade de um
+   colaborador já existente por aqui; para isso seria um cadastro
+   novo). Depende da RPC 'upsert_colaborador_banco' (authenticated) —
+   ver observação sobre Supabase no relatório desta rodada; ainda não
+   criada no banco. */
+function abrirFormularioColaboradorBanco(existente){
+  const ehEdicao=!!existente;
+  const modalId='modalColaboradorBanco';
+  const overlay=document.createElement('div');
+  overlay.id=modalId;
+  overlay.className='modal-overlay';
+  overlay.innerHTML=`
+    <div class="modal-box">
+      <div class="card-title">${ehEdicao?'Editar colaborador':'Novo colaborador'}</div>
+      <div class="field"><label>Função</label>
+        <select id="fcbFuncao" ${ehEdicao?'disabled':''}>
+          <option value="">Selecione a função</option>
+          <option value="VIGILANTE" ${existente&&existente.funcao==='VIGILANTE'?'selected':''}>VIGILANTE</option>
+          <option value="VIGILANTE LÍDER DE EQUIPE" ${existente&&existente.funcao==='VIGILANTE LÍDER DE EQUIPE'?'selected':''}>VIGILANTE LÍDER DE EQUIPE</option>
+          <option value="BRIGADISTA" ${existente&&existente.funcao==='BRIGADISTA'?'selected':''}>BRIGADISTA</option>
+          <option value="__outra__" ${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'selected':''}>Outra função</option>
+        </select>
+        <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
+      </div>
+      <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
+      <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
+      <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="MG12.345.678" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
+      <div class="field"><label>Data do curso</label><input type="date" id="fcbDataCurso" value="${existente&&existente.data_curso?existente.data_curso:''}"></div>
+      <div class="field"><label>Reciclagem</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
+      <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
+      <div class="field"><label>Grandes eventos</label>
+        <select id="fcbGrandesEventos">
+          <option value="nao" ${!(existente&&existente.grandes_eventos===true)?'selected':''}>Não</option>
+          <option value="sim" ${existente&&existente.grandes_eventos===true?'selected':''}>Sim</option>
+        </select>
+      </div>
+      <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="MG1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
+      <div class="field"><label>Telefone</label><input type="text" id="fcbTelefone" placeholder="(00) 0 0000-0000" maxlength="16" value="${existente&&existente.telefone?formatTelefone(existente.telefone):''}"></div>
+      <div id="fcbErro" style="color:var(--red); font-size:13px; margin-top:6px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+        <button class="btn btn-ghost" id="fcbCancelar">Cancelar</button>
+        <button class="btn btn-teal" id="fcbSalvar">Salvar</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const cpfEl=document.getElementById('fcbCpf');
+  if(cpfEl) cpfEl.oninput=()=>maskCpfInput(cpfEl);
+  const identidadeEl=document.getElementById('fcbIdentidade');
+  identidadeEl.oninput=()=>maskIdentidadeInput(identidadeEl);
+  const dpfEl=document.getElementById('fcbNumeroDpf');
+  dpfEl.oninput=()=>maskNumeroDpfInput(dpfEl);
+  const telEl=document.getElementById('fcbTelefone');
+  telEl.oninput=()=>maskTelefoneInput(telEl);
+  const nomeEl=document.getElementById('fcbNome');
+  nomeEl.oninput=()=>{ const pos=nomeEl.selectionStart; nomeEl.value=nomeEl.value.toUpperCase(); nomeEl.setSelectionRange(pos,pos); };
+  const funcaoSel=document.getElementById('fcbFuncao');
+  const funcaoOutra=document.getElementById('fcbFuncaoOutra');
+  funcaoSel.onchange=()=>{ funcaoOutra.style.display = funcaoSel.value==='__outra__' ? 'block' : 'none'; };
+
+  document.getElementById('fcbCancelar').onclick=()=>overlay.remove();
+
+  document.getElementById('fcbSalvar').onclick=async ()=>{
+    const erroBox=document.getElementById('fcbErro');
+    erroBox.innerHTML='';
+    const funcao = funcaoSel.value==='__outra__' ? funcaoOutra.value.trim() : funcaoSel.value;
+    const nome=nomeExibicao(nomeEl.value);
+    const cpfLimpo=cpfEl.value.replace(/\D/g,'');
+    const identidade=formatIdentidadeMG(identidadeEl.value);
+    const dataCurso=document.getElementById('fcbDataCurso').value;
+    const reciclagem=document.getElementById('fcbReciclagem').value;
+    const numeroDpf=formatNumeroDpfMG(dpfEl.value);
+    const cidade=document.getElementById('fcbCidade').value.trim();
+    const grandesEventos=document.getElementById('fcbGrandesEventos').value==='sim';
+    const telefoneDigits=telEl.value.replace(/\D/g,'');
+
+    if(!funcao){ erroBox.textContent='Selecione a função.'; return; }
+    if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
+    if(cpfLimpo.length!==11){ erroBox.textContent='CPF INVÁLIDO. VERIFIQUE OS NÚMEROS INFORMADOS.'; return; }
+    if(!ehEdicao && buscarColaboradorPorCpf(cpfLimpo)){
+      erroBox.textContent='Este CPF já está cadastrado no Banco de Colaboradores. Use "Editar" na listagem em vez de criar um novo.';
+      return;
+    }
+
+    const btnSalvar=document.getElementById('fcbSalvar');
+    btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
+    try{
+      const r=await chamarRpcGestor('upsert_colaborador_banco',{
+        p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
+        p_identidade:identidade||null, p_data_curso:dataCurso||null, p_reciclagem:reciclagem||null,
+        p_numero_dpf:numeroDpf||null, p_cidade:cidade||null, p_grandes_eventos:grandesEventos
+      });
+      if(!r.ok) throw r.error;
+      showToast('Dados atualizados com sucesso.');
+      overlay.remove();
+      /* Propaga nome/telefone (únicos campos cadastrais também
+         armazenados em staff/interessados) para os eventos onde este
+         CPF já aparece — nunca mexe em função, escala, presença,
+         check-in/checkout ou valores. Só roda para edição de
+         colaborador já existente (um cadastro novo, por definição,
+         ainda não está em nenhum evento). Não bloqueia o fluxo em
+         caso de falha — o cadastro no Banco já foi salvo com sucesso. */
+      if(ehEdicao){
+        try{
+          const {error:erroPropagacao}=await sb.rpc('propagar_dados_colaborador',{p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits||null});
+          if(erroPropagacao) throw erroPropagacao;
+        }catch(propErr){
+          console.error('Falha ao propagar dados cadastrais para os eventos:', propErr);
+        }
+      }
+      await loadColaboradoresBanco();
+      renderShell();
+    }catch(err){
+      console.error('Erro ao salvar colaborador no Banco:', err);
+      erroBox.innerHTML=formatarErroSupabase(err);
+      btnSalvar.disabled=false; btnSalvar.textContent='Salvar';
+    }
+  };
 }
 /* ================= IMPRESSÃO DE CRACHÁS (novo, dentro do evento) =================
    Fonte da lista de escalados: staff[] (Escala Oficial) — nunca a
