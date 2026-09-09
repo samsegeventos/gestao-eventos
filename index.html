@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 04:35';
+const APP_VERSION = '27/08/2026 05:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -717,7 +717,20 @@ async function loadDiasEscalaPresenca(){
       sb.rpc('fechamento_evento',{p_evento_id:currentEventId})
     ]);
     if(e1) throw e1; if(e2) throw e2; if(e3) throw e3; if(e4) throw e4;
-    participacoesNovas=parts||[]; escalaDias=esc||[]; presencasNovas=pres||[]; fechamentoDados=fech||[];
+    participacoesNovas=parts||[]; escalaDias=esc||[]; presencasNovas=pres||[];
+    /* Participações anuladas nunca entram no fechamento financeiro —
+       filtradas AQUI, num único ponto central, para propagar
+       automaticamente para toda tela que lê fechamentoDados
+       (Fechamento Financeiro, Impressão p/ Presidência, Aprovação do
+       Gestor, impressões) sem precisar alterar cada uma
+       separadamente. O check-in/checkout original continua intacto
+       em presencasNovas (nunca filtrado) — só o cálculo financeiro
+       ignora quem está anulado. Cruza por participacao_id, com
+       fallback seguro: se a coluna "anulada" ainda não existir no
+       retorno da RPC (antes do SQL desta rodada ser aplicado), o
+       filtro não remove ninguém, comportamento idêntico ao atual. */
+    const idsAnulados=new Set(participacoesNovas.filter(p=>p.anulada).map(p=>pid(p)));
+    fechamentoDados=(fech||[]).filter(f=>!idsAnulados.has(f.participacao_id));
   }catch(err){
     console.error(err);
     participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[];
@@ -2367,6 +2380,8 @@ function renderCheckoutDias(){
 }
 function renderCheckoutDiasLista(){
   const diaId=diaSelecionadoPresenca || eventoDias[0].id;
+  const ev=currentEvent();
+  const eventoAberto = ev && ev.status==='aberto';
   const escaladosNoDia = participacoesNovas.filter(p=>escaladoNoDia(pid(p), diaId));
   const escaladosFiltrados=filtrarPorNomeOuCpf(escaladosNoDia, checkoutBusca, p=>p.nome, p=>p.cpf);
   if(!escaladosFiltrados.length) return escaladosNoDia.length ? `<div class="empty"><b>Nenhum resultado para essa busca</b></div>` : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`;
@@ -2374,13 +2389,14 @@ function renderCheckoutDiasLista(){
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
     <table>
-      <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th>Situação</th><th></th></tr></thead>
       <tbody>
-        ${linhasComTituloDeGrupo(grupos, 8, (p,numero)=>{
+        ${linhasComTituloDeGrupo(grupos, 9, (p,numero)=>{
           const pr=presencaDoDia(pid(p), diaId);
           const temEntrada=pr && pr.entrada_ts;
           const temSaida=pr && pr.saida_ts;
-          return `<tr data-participacao-id="${pid(p)}">
+          const anulada=!!p.anulada;
+          return `<tr data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>
             <td class="mono">${numero}</td>
             <td>${escapeHtml(nomeExibicao(p.nome))}</td>
             <td>${escapeHtml(p.funcao||'—')}</td>
@@ -2388,21 +2404,25 @@ function renderCheckoutDiasLista(){
             <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
             <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
             <td class="mono">${horasExtraDe(pr)!=null ? horasExtraDe(pr)+'h' : (temSaida?'não informado':'—')}</td>
+            <td>${anulada?'<span class="badge" style="color:var(--red);border-color:var(--red);">🔴 PARTICIPAÇÃO ANULADA</span>':(temEntrada?'<span class="badge pago">Válido</span>':'—')}</td>
             <td>
-              ${!temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
-              ${temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
-              ${temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
+              ${!anulada && !temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
+              ${!anulada && temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
+              ${!anulada && temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
                 <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
                   <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
                   <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
                   <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
                 </div>` : ''}
-              ${temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
+              ${!anulada && temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
                 <div style="display:flex;align-items:center;gap:6px;">
                   <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
                   <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
                 </div>` : ''}
-              ${temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+              ${!anulada && temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+              ${!anulada && temEntrada && eventoAberto ? `<button class="btn btn-danger btn-sm btn-anular-participacao" style="margin-top:4px;">Anular participação</button>` : ''}
+              ${anulada && eventoAberto ? `<button class="btn btn-ghost btn-sm btn-restaurar-participacao" style="margin-top:4px;">Restaurar participação</button>` : ''}
+              ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;">Evento finalizado — situação travada</div>` : ''}
             </td>
           </tr>`;
         })}
@@ -2470,6 +2490,91 @@ function attachCheckoutListaHandlers(){
       }
     };
   });
+  document.querySelectorAll('.btn-anular-participacao').forEach(btn=>{
+    btn.onclick=()=>{
+      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const p=participacoesNovas.find(x=>pid(x)===participacaoId);
+      const pr=presencaDoDia(participacaoId, diaSelecionadoPresenca);
+      abrirModalAnularParticipacao(p, pr);
+    };
+  });
+  document.querySelectorAll('.btn-restaurar-participacao').forEach(btn=>{
+    btn.onclick=async ()=>{
+      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      if(!confirm('Restaurar esta participação? Ela voltará a ser considerada válida e entrará novamente no fechamento financeiro.')) return;
+      const r=await chamarRpcGestor('restaurar_participacao_evento',{p_participacao_id:participacaoId});
+      if(r.ok){ showToast('Participação restaurada.'); await loadDiasEscalaPresenca(); renderShell(); }
+    };
+  });
+}
+/* ================= ANULAR PARTICIPAÇÃO =================
+   Ação específica para corrigir check-in/checkout registrados por
+   engano em um colaborador que não participou efetivamente do
+   evento. NUNCA apaga presenças/participação — só marca um estado
+   (participacoes.anulada) que o resto do sistema passa a respeitar:
+   a linha some dos totais do Fechamento Financeiro (tratada como
+   R$0,00 na exibição/soma feita aqui no frontend), mas os horários de
+   entrada/saída originais continuam intactos, visíveis para
+   auditoria. Diferente de "excluir": não mexe em CPFs Autorizados,
+   Pré-Escala, Escala Oficial nem Escala por Dia. Só disponível
+   enquanto o evento está com status 'aberto' — depois de finalizado,
+   a situação fica travada (sem alteração silenciosa em valores já
+   fechados). Depende da RPC 'anular_participacao_evento'
+   (authenticated) — ainda não criada no banco, ver relatório desta
+   rodada. */
+function abrirModalAnularParticipacao(p, pr){
+  if(!p) return;
+  const ev=currentEvent();
+  const overlay=document.createElement('div');
+  overlay.className='modal-overlay';
+  const entradaTxt = pr && pr.entrada_ts ? new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+  const saidaTxt = pr && pr.saida_ts ? new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '—';
+  overlay.innerHTML=`
+    <div class="modal-box">
+      <div class="card-title" style="color:var(--red);">Anular participação</div>
+      <div class="field"><label>Colaborador</label><div class="mono" style="padding:6px 0;">${escapeHtml(nomeExibicao(p.nome))}</div></div>
+      <div class="field"><label>CPF</label><div class="mono" style="padding:6px 0;">${p.cpf?formatCpf(p.cpf):'—'}</div></div>
+      <div class="field"><label>Evento</label><div style="padding:6px 0;">${escapeHtml(ev.evento)}</div></div>
+      <div class="field"><label>Check-in</label><div class="mono" style="padding:6px 0;">${entradaTxt}</div></div>
+      <div class="field"><label>Checkout</label><div class="mono" style="padding:6px 0;">${saidaTxt}</div></div>
+      <div class="empty" style="text-align:left; padding:12px; margin:10px 0; border-color:var(--red);">
+        <b style="color:var(--red);">ATENÇÃO</b>
+        Esta ação informará que o colaborador não participou efetivamente deste evento. A participação será retirada do fechamento financeiro e dos cálculos de pagamento, mas os registros originais de check-in/checkout serão preservados para auditoria — nada é apagado.
+      </div>
+      <div class="field"><label>Motivo da anulação (obrigatório)</label>
+        <textarea id="anularMotivo" rows="3" placeholder="Ex: Funcionário não estava presente no evento. Check-in e checkout registrados por engano." style="width:100%; resize:vertical;"></textarea>
+      </div>
+      <div id="anularErro" style="color:var(--red); font-size:13px; margin-top:6px;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+        <button class="btn btn-ghost" id="anularCancelar">Cancelar</button>
+        <button class="btn btn-danger" id="anularConfirmar" disabled>Anular participação</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  const motivoEl=document.getElementById('anularMotivo');
+  const btnConfirmar=document.getElementById('anularConfirmar');
+  motivoEl.oninput=()=>{ btnConfirmar.disabled = motivoEl.value.trim().length===0; };
+  document.getElementById('anularCancelar').onclick=()=>overlay.remove();
+  btnConfirmar.onclick=async ()=>{
+    const motivo=motivoEl.value.trim();
+    if(!motivo) return;
+    const erroBox=document.getElementById('anularErro');
+    erroBox.innerHTML='';
+    btnConfirmar.disabled=true; btnConfirmar.textContent='Anulando...';
+    try{
+      const {error}=await sb.rpc('anular_participacao_evento',{p_participacao_id:pid(p), p_motivo:motivo});
+      if(error) throw error;
+      showToast('Participação anulada.');
+      overlay.remove();
+      await loadDiasEscalaPresenca();
+      renderShell();
+    }catch(err){
+      console.error('Erro ao anular participação:', err);
+      erroBox.innerHTML=formatarErroSupabase(err);
+      btnConfirmar.disabled=false; btnConfirmar.textContent='Anular participação';
+    }
+  };
 }
 function attachCheckoutHandlers(){
   const sel=document.getElementById('selDiaPresenca');
@@ -3613,7 +3718,7 @@ function attachCpfsAutorizadosRowHandlers(){
          (interessados/staff) não têm como saber com segurança se já
          existe check-in/checkout, então bloquear por aqui só
          impediria exclusões legítimas sem proteger nada de verdade. */
-      if(!confirm(`ATENÇÃO!\n\nVocê está prestes a excluir TODOS os dados deste colaborador neste evento — CPF Autorizado, Pré-Escala, Escala Oficial e Escala por Dia. Se ele for Vigilante, também será removido do Banco de Colaboradores.\n\nSó é permitido se ele ainda não tiver check-in/check-out registrado neste evento.\n\nColaborador: ${nomeExibicao(atual&&atual.nome)||'(sem nome)'}\nCPF: ${formatCpf(cpf)}\n\nEsta ação não pode ser desfeita.`)) return;
+      if(!confirm(`ATENÇÃO!\n\nVocê está prestes a excluir TODOS os dados deste colaborador neste evento — CPF Autorizado, Pré-Escala, Escala Oficial e Escala por Dia. Se ele for Vigilante, também será removido do Banco de Colaboradores.\n\nSó é permitido se ele ainda não tiver check-in/check-out registrado neste evento. Se o check-in/checkout foi registrado por engano e o colaborador não participou do evento, use "Anular participação" em Checkout por Dia em vez de excluir.\n\nColaborador: ${nomeExibicao(atual&&atual.nome)||'(sem nome)'}\nCPF: ${formatCpf(cpf)}\n\nEsta ação não pode ser desfeita.`)) return;
       const r=await chamarRpcGestor('excluir_colaborador_evento',{p_evento_id:currentEventId, p_cpf:cpf});
       if(r.ok){
         showToast('Cadastro excluído em todas as áreas do evento.');
