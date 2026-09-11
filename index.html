@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 05:15';
+const APP_VERSION = '27/08/2026 05:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -962,7 +962,7 @@ function renderPublic(alreadySent){
           ${precisaIdentidade?`
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">RG</label>
-            <input type="text" id="intIdentidade" placeholder="MG12.345.678">
+            <input type="text" id="intIdentidade" placeholder="12.345.678">
           </div>`:''}
           ${precisaDataCurso?`
           <div class="field" style="text-align:left;">
@@ -991,7 +991,7 @@ function renderPublic(alreadySent){
           ${precisaNumeroDpf?`
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
-            <input type="text" id="intNumeroDpf" placeholder="MG1234567/8901">
+            <input type="text" id="intNumeroDpf" placeholder="1234567/8901">
           </div>`:''}
           <button class="btn btn-amber" id="btnConfirmarParticipacao" style="width:100%;padding:12px;margin-top:10px;">Confirmar participação</button>
           <div id="erroParticipacao" style="margin-top:10px;color:var(--red);font-size:12.5px;"></div>
@@ -1073,7 +1073,10 @@ function renderPublic(alreadySent){
              CPF neste evento. Inserção direta e pontual (não usa
              sSet/saveInteressados, que apaga e reinsere TODA a lista do
              evento — inadequado aqui, pois rodaria sem o restante da
-             lista carregado e apagaria decisões já tomadas pelo gestor). */
+             lista carregado e apagaria decisões já tomadas pelo gestor).
+             Não bloqueia a confirmação por causa disso — a Pré-Escala é
+             coadjuvante aqui, o essencial é confirmar a participação e
+             o cadastro no Banco (abaixo, que SIM bloqueia). */
           try{
             const {data:existente,error:exErr}=await sb.from('interessados')
               .select('id').eq('evento_id', ev.id).eq('cpf', cpfLimpo).maybeSingle();
@@ -1085,66 +1088,50 @@ function renderPublic(alreadySent){
               if(insErr) throw insErr;
             }
           }catch(preEscalaErr){
-            /* Não bloqueia a confirmação do funcionário por causa disso;
-               só registra no console para investigação do gestor. */
             console.error('Falha ao registrar na Pré-Escala:', preEscalaErr);
           }
           /* Marca em CPFs Autorizados que este colaborador realmente
-             concluiu o cadastro pelo link (nunca por só existir em
-             interessados/staff/aprovação) e atualiza o nome completo
-             que ele digitou — RPC própria, restrita (só atualiza um
-             registro JÁ autorizado, nunca cria/autoriza CPF novo nem
-             muda função). Também não bloqueia a confirmação em caso
-             de falha. */
+             concluiu o cadastro pelo link e atualiza o nome completo —
+             RPC própria, restrita (só atualiza registro JÁ autorizado).
+             Também não bloqueia por conta própria — mas se o passo
+             seguinte (Banco de Colaboradores) falhar, o erro geral
+             ainda impede a tela de sucesso. */
           try{
             const {error:erroConcluido}=await sb.rpc('marcar_cadastro_concluido_cpf_autorizado',{p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome});
             if(erroConcluido) throw erroConcluido;
           }catch(concluidoErr){
             console.error('Falha ao marcar cadastro concluído em CPFs Autorizados:', concluidoErr);
           }
-          /* Fluxo integrado: se for Vigilante, salva também no Banco de
-             Colaboradores — mesma RPC já usada pelo link específico de
-             crachá, agora incluindo telefone. Campos não coletados
-             nesta rodada (já completos/válidos) vão como null: o
-             upsert já preserva o que existir, nunca apaga por causa de
-             um campo vazio. */
+          /* CORREÇÃO DESTA RODADA — este é o passo que passou a ser
+             BLOQUEANTE: antes, se salvar_colaborador_cracha falhasse
+             aqui, o erro só ia pro console e a tela mostrava sucesso
+             mesmo assim (o colaborador via "confirmado", mas o Banco
+             de Colaboradores nunca era realmente atualizado). Agora, o
+             erro sobe para o catch externo — só mostramos a tela de
+             sucesso se o cadastro no Banco realmente foi salvo.
+             Campos não coletados nesta rodada (já completos/válidos no
+             Banco) vão como null: o upsert preserva o que existir,
+             nunca apaga por causa de um campo vazio — mas os campos
+             OBRIGATÓRIOS para o estado final (depois do COALESCE) são
+             validados dentro da própria RPC agora (ver SQL entregue). */
           if(ehVigilante){
-            try{
-              const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha',{
-                p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
-                p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf,
-                p_cidade:cidade, p_grandes_eventos:grandesEventos
-              });
-              if(erroBanco) throw erroBanco;
-            }catch(bancoErr){
-              /* Também não bloqueia a confirmação de participação —
-                 mas registra para investigação, já que o objetivo
-                 desta rodada é justamente popular o Banco de
-                 Colaboradores automaticamente. */
-              console.error('Falha ao salvar dados de crachá no Banco de Colaboradores:', bancoErr);
-            }
+            const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha_v2',{
+              p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
+              p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf,
+              p_cidade:cidade, p_grandes_eventos:grandesEventos
+            });
+            if(erroBanco) throw erroBanco;
           } else {
-            /* Correção desta rodada: antes, só Vigilantes atualizavam
-               o cadastro central em "colaboradores" — Brigadistas e
-               demais funções nunca passavam por nenhum UPSERT aqui,
-               o que é a causa confirmada de vários colaboradores
-               ficarem com colaboradores.funcao=NULL mesmo depois de
-               preencher o link. A classificação por subaba não
-               depende mais deste campo (agora vem do histórico de
-               participacoes), mas mesmo assim continuamos mantendo
-               nome/telefone/função atualizados aqui como metadado
-               útil, para qualquer função — sem pedir nenhum dado
-               extra de crachá (identidade/curso/reciclagem/DPF/
-               cidade/grandes eventos continuam exclusivos de
-               Vigilante, como já era). */
-            try{
-              const {error:erroBancoBasico}=await sb.rpc('salvar_colaborador_cracha',{
-                p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits
-              });
-              if(erroBancoBasico) throw erroBancoBasico;
-            }catch(bancoErr){
-              console.error('Falha ao atualizar cadastro básico no Banco de Colaboradores:', bancoErr);
-            }
+            /* Brigadistas e demais funções também passam a atualizar o
+               cadastro básico (nome/telefone/função) no Banco — antes,
+               só Vigilante passava por aqui, causa confirmada de vários
+               colaboradores ficarem com colaboradores.funcao=NULL. Sem
+               pedir nenhum dado extra de crachá (esses continuam
+               exclusivos de Vigilante). */
+            const {error:erroBancoBasico}=await sb.rpc('salvar_colaborador_cracha_v2',{
+              p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits
+            });
+            if(erroBancoBasico) throw erroBancoBasico;
           }
           renderPublic(true);
         }catch(err){
@@ -1242,7 +1229,7 @@ function renderPublicCracha(){
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
-            <input type="text" id="crachaIdentidade" value="${escapeHtml(formatIdentidadeMG(registro.identidade||''))}" placeholder="MG12.345.678">
+            <input type="text" id="crachaIdentidade" value="${escapeHtml(formatIdentidadeMG(registro.identidade||''))}" placeholder="12.345.678">
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data do curso</label>
@@ -1254,7 +1241,7 @@ function renderPublicCracha(){
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
-            <input type="text" id="crachaNumeroDpf" value="${escapeHtml(formatNumeroDpfMG(registro.numero_dpf||''))}" placeholder="MG1234567/8901">
+            <input type="text" id="crachaNumeroDpf" value="${escapeHtml(formatNumeroDpfMG(registro.numero_dpf||''))}" placeholder="1234567/8901">
           </div>
           <div id="erroCracha" style="color:var(--red); font-size:13px; margin-top:8px;"></div>
           <button class="btn btn-teal" id="btnSalvarCracha" style="width:100%;padding:12px;margin-top:8px;">Salvar dados do crachá</button>
@@ -1323,7 +1310,7 @@ function renderPublicCracha(){
         btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
 
         try{
-          const {error:erroSalvar}=await sb.rpc('salvar_colaborador_cracha',{
+          const {error:erroSalvar}=await sb.rpc('salvar_colaborador_cracha_v2',{
             p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao,
             p_identidade:identidade, p_data_curso:dataCurso, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
           });
@@ -2996,18 +2983,25 @@ function maskTelefoneInput(el){ el.value=formatTelefone(el.value); }
    e reconstruídos do zero, nunca duplicados) + limite de dígitos +
    reconstrução progressiva da máscara. */
 function formatIdentidadeMG(v){
+  /* Nome da função preservado por compatibilidade com todos os pontos
+     de chamada já existentes (Banco de Colaboradores, os dois links
+     públicos, impressão do crachá) — só o COMPORTAMENTO mudou: não
+     fixa mais nenhuma UF. RG de qualquer estado brasileiro, só com
+     máscara de pontuação sobre os números, sem prefixo de sigla. */
   const d=(v||'').replace(/\D/g,'').slice(0,8);
   if(!d) return '';
-  let out='MG'+d.slice(0,2);
+  let out=d.slice(0,2);
   if(d.length>2) out+='.'+d.slice(2,5);
   if(d.length>5) out+='.'+d.slice(5,8);
   return out;
 }
 function maskIdentidadeInput(el){ el.value=formatIdentidadeMG(el.value); }
 function formatNumeroDpfMG(v){
+  /* Mesmo raciocínio: nome preservado, sigla de UF removida do
+     comportamento. */
   const d=(v||'').replace(/\D/g,'').slice(0,11);
   if(!d) return '';
-  let out='MG'+d.slice(0,7);
+  let out=d.slice(0,7);
   if(d.length>7) out+='/'+d.slice(7,11);
   return out;
 }
@@ -3261,7 +3255,7 @@ function abrirFormularioColaboradorBanco(existente){
       </div>
       <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
-      <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="MG12.345.678" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
+      <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="12.345.678" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
       <div class="field"><label>Data do curso</label><input type="date" id="fcbDataCurso" value="${existente&&existente.data_curso?existente.data_curso:''}"></div>
       <div class="field"><label>Reciclagem</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
       <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
@@ -3271,7 +3265,7 @@ function abrirFormularioColaboradorBanco(existente){
           <option value="sim" ${existente&&existente.grandes_eventos===true?'selected':''}>Sim</option>
         </select>
       </div>
-      <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="MG1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
+      <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
       <div class="field"><label>Telefone</label><input type="text" id="fcbTelefone" placeholder="(00) 0 0000-0000" maxlength="16" value="${existente&&existente.telefone?formatTelefone(existente.telefone):''}"></div>
       <div id="fcbErro" style="color:var(--red); font-size:13px; margin-top:6px;"></div>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
