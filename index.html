@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 05:00';
+const APP_VERSION = '27/08/2026 05:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1122,6 +1122,28 @@ function renderPublic(alreadySent){
                  desta rodada é justamente popular o Banco de
                  Colaboradores automaticamente. */
               console.error('Falha ao salvar dados de crachá no Banco de Colaboradores:', bancoErr);
+            }
+          } else {
+            /* Correção desta rodada: antes, só Vigilantes atualizavam
+               o cadastro central em "colaboradores" — Brigadistas e
+               demais funções nunca passavam por nenhum UPSERT aqui,
+               o que é a causa confirmada de vários colaboradores
+               ficarem com colaboradores.funcao=NULL mesmo depois de
+               preencher o link. A classificação por subaba não
+               depende mais deste campo (agora vem do histórico de
+               participacoes), mas mesmo assim continuamos mantendo
+               nome/telefone/função atualizados aqui como metadado
+               útil, para qualquer função — sem pedir nenhum dado
+               extra de crachá (identidade/curso/reciclagem/DPF/
+               cidade/grandes eventos continuam exclusivos de
+               Vigilante, como já era). */
+            try{
+              const {error:erroBancoBasico}=await sb.rpc('salvar_colaborador_cracha',{
+                p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits
+              });
+              if(erroBancoBasico) throw erroBancoBasico;
+            }catch(bancoErr){
+              console.error('Falha ao atualizar cadastro básico no Banco de Colaboradores:', bancoErr);
             }
           }
           renderPublic(true);
@@ -3065,6 +3087,40 @@ async function loadColaboradoresBanco(){
   const {data,error}=await sb.rpc('listar_colaboradores_banco',{});
   if(error){ console.error(error); colaboradoresBanco=[]; return; }
   colaboradoresBanco=data||[];
+  /* Classificação nas subabas passou a ser baseada no HISTÓRICO REAL
+     de participações (public.participacoes), não mais em
+     colaboradores.funcao — porque confirmamos que várias pessoas têm
+     colaboradores.funcao=NULL mesmo já tendo participado como
+     Vigilante/Brigadista em algum evento. RPC nova, só leitura,
+     agregando por CPF normalizado (ignora participações anuladas).
+     Falha aqui não bloqueia a tela: todo mundo cai em "Demais Funções"
+     como comportamento seguro, igual ao que já existia antes desta
+     correção. */
+  try{
+    const {data:categorias,error:errCat}=await sb.rpc('listar_categorias_colaboradores',{});
+    if(errCat) throw errCat;
+    const porCpf={};
+    (categorias||[]).forEach(cat=>{ porCpf[String(cat.cpf||'').replace(/\D/g,'')]=cat; });
+    colaboradoresBanco.forEach(c=>{
+      const cat=porCpf[String(c.cpf||'').replace(/\D/g,'')];
+      c._ehVigilante=!!(cat && cat.eh_vigilante);
+      c._ehBrigadista=!!(cat && cat.eh_brigadista);
+    });
+  }catch(errCat){
+    console.error('Falha ao consultar histórico de participações para classificação:', errCat);
+    colaboradoresBanco.forEach(c=>{ c._ehVigilante=false; c._ehBrigadista=false; });
+  }
+}
+/* Um mesmo CPF pode pertencer a mais de uma subaba (ex: já trabalhou
+   como Vigilante em um evento e Brigadista em outro) — por isso isto
+   não é mais uma classificação exclusiva (não existe mais uma função
+   que devolve "a" categoria de alguém), e sim um teste de
+   pertencimento por subaba. "Demais Funções" é quem não pertence a
+   nenhuma das duas. */
+function colaboradorNaSubaba(c, subaba){
+  if(subaba==='vigilantes') return !!c._ehVigilante;
+  if(subaba==='brigadistas') return !!c._ehBrigadista;
+  return !c._ehVigilante && !c._ehBrigadista;
 }
 function buscarColaboradorPorCpf(cpf){
   const norm=String(cpf||'').replace(/\D/g,'');
@@ -3085,15 +3141,13 @@ function filtrarColaboradoresBanco(lista){
    normalizaFuncaoDisplay), então "VIGILANTE LÍDER DE EQUIPE" continua
    caindo em Vigilantes sem nenhuma lógica nova. Nada aqui altera a
    função armazenada — só decide em qual subaba o colaborador aparece. */
-function classificarColaboradorBanco(c){
-  const base=baseDaFuncaoDisplay(normalizaFuncaoDisplay(c.funcao||''));
-  if(base==='VIGILANTE') return 'vigilantes';
-  if(base==='BRIGADISTA') return 'brigadistas';
-  return 'demais';
-}
 function renderBancoColaboradores(main){
   const contagens={vigilantes:0, brigadistas:0, demais:0};
-  colaboradoresBanco.forEach(c=>{ contagens[classificarColaboradorBanco(c)]++; });
+  colaboradoresBanco.forEach(c=>{
+    if(colaboradorNaSubaba(c,'vigilantes')) contagens.vigilantes++;
+    if(colaboradorNaSubaba(c,'brigadistas')) contagens.brigadistas++;
+    if(colaboradorNaSubaba(c,'demais')) contagens.demais++;
+  });
   main.innerHTML=`
     <div class="card-title">Banco de Colaboradores — Consulta</div>
     <div class="card-sub">Cadastro central e permanente — um único registro por CPF, reaproveitado em todos os eventos em que a pessoa trabalhar. Os dados são preenchidos automaticamente pelos links públicos dos eventos; esta tela é só para consulta.</div>
@@ -3115,7 +3169,7 @@ function renderBancoColaboradores(main){
   attachBancoColaboradoresHandlers();
 }
 function renderListaColaboradoresBanco(){
-  const daSubaba=colaboradoresBanco.filter(c=>classificarColaboradorBanco(c)===colaboradoresSubaba);
+  const daSubaba=colaboradoresBanco.filter(c=>colaboradorNaSubaba(c,colaboradoresSubaba));
   const lista=filtrarColaboradoresBanco(daSubaba);
   if(!lista.length){
     const buscaAtiva=colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim();
