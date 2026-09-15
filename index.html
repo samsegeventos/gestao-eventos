@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 05:45';
+const APP_VERSION = '27/08/2026 06:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -4044,6 +4044,32 @@ function attachDetailHandlers(){
         p_evento_id:currentEventId, p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits
       });
       if(erroPart) throw erroPart;
+
+      /* PASSO 5.5 — Pré-Escala já nasce APROVADA aqui, diferente do
+         fluxo público (que nasce 'pendente' e depende do clique
+         "Aprovar"). Faz sentido: o próprio ato do gestor cadastrar
+         manualmente já É a aprovação — não tem sentido pedir uma
+         segunda aprovação de algo que o gestor acabou de decidir.
+         Mesmo padrão de acesso à tabela já usado no fluxo público
+         (sb.from('interessados')), sem nenhuma RPC nova. Upsert manual
+         por evento_id+cpf: atualiza se já existir (ex: reenvio do
+         mesmo CPF), insere se não existir — nunca duplica. É esta
+         etapa que faz o colaborador aparecer em "Escala e Horário por
+         Dia" (que filtra por interessados.status==='aprovado'). */
+      const {data:interessadoExistente,error:exIntErr}=await sb.from('interessados')
+        .select('id').eq('evento_id', currentEventId).eq('cpf', cpfLimpo).maybeSingle();
+      if(exIntErr) throw exIntErr;
+      if(interessadoExistente){
+        const {error:updIntErr}=await sb.from('interessados')
+          .update({nome, telefone: telefoneDigits, funcao, status:'aprovado'})
+          .eq('id', interessadoExistente.id);
+        if(updIntErr) throw updIntErr;
+      } else {
+        const {error:insIntErr}=await sb.from('interessados').insert({
+          evento_id: currentEventId, nome, cpf: cpfLimpo, telefone: telefoneDigits, funcao, status:'aprovado'
+        });
+        if(insIntErr) throw insIntErr;
+      }
 
       /* PASSO 6/7 — só chega aqui se os passos críticos deram certo:
          mantém a Escala Oficial funcionando exatamente como antes. */
