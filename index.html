@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 05:30';
+const APP_VERSION = '27/08/2026 05:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3993,13 +3993,74 @@ function attachDetailHandlers(){
 
   const btnAdd=document.getElementById('btnAddStaff');
   if(btnAdd) btnAdd.onclick=async ()=>{
-    const nome=document.getElementById('newNome').value.trim();
-    const cpf=document.getElementById('newCpf').value.trim();
-    const telefone=document.getElementById('newTelefone').value.trim();
+    /* CORREÇÃO DESTA RODADA — antes, cadastro manual só fazia
+       staff.push()+saveStaff(), gravando só em eventos.dados.staff.
+       Isso deixava a pessoa "visível" na Escala Oficial, mas sem
+       nenhuma linha em participacoes — por isso ela nunca aparecia em
+       Escala/Horário por Dia, Checkout, Fechamento ou Aprovação (que
+       dependem de participacoes, uma estrutura totalmente separada de
+       staff). Agora o cadastro manual percorre exatamente o mesmo
+       caminho de quem entra pelo link, reaproveitando as RPCs já
+       existentes, na ordem: colaboradores -> cpfs_autorizados ->
+       participacoes -> staff. Nenhuma lógica paralela nova — só
+       chamadas às RPCs que já existem e já fazem isso para o fluxo
+       público. */
+    const nome=nomeExibicao(document.getElementById('newNome').value.trim());
+    const cpfLimpo=document.getElementById('newCpf').value.replace(/\D/g,'');
+    const telefoneDigits=document.getElementById('newTelefone').value.replace(/\D/g,'');
     const funcao=document.getElementById('newFuncao').value.trim();
+
     if(!nome){ showToast('Informe o nome do colaborador.'); return; }
-    staff.push({id:uid(), eventId:currentEventId, nome, cpf, telefone, funcao, escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
-    await saveStaff(); renderShell(); showToast('Colaborador adicionado.');
+    if(cpfLimpo.length!==11){ showToast('Informe um CPF válido (11 números).'); return; }
+    if(telefoneDigits.length!==11){ showToast('Informe um telefone válido — a participação no evento exige telefone.'); return; }
+    if(!funcao){ showToast('Informe a função.'); return; }
+
+    btnAdd.disabled=true; btnAdd.textContent='Cadastrando...';
+    try{
+      /* PASSO 3 — Banco de Colaboradores. Cadastro MANUAL usa a RPC
+         ORIGINAL (sem _v2), de propósito — ela nunca teve validação de
+         completude para Vigilante, então aceita um cadastro
+         inicialmente incompleto (identidade/curso/reciclagem/DPF/
+         cidade/grandes_eventos ficam NULL para um CPF novo, ou
+         preservados como já estavam para um CPF existente — essa RPC
+         nunca toca nessas colunas além do que for enviado). O fluxo
+         público continua usando _v2 (inalterado em todos os seus 3
+         pontos de chamada), que continua exigindo Vigilante completo. */
+      const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha',{
+        p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits
+      });
+      if(erroBanco) throw erroBanco;
+
+      /* PASSO 4 — CPF Autorizado no evento atual. Mesma RPC já usada
+         pela aba CPFs Autorizados — se o CPF já estiver autorizado
+         para este evento, ela atualiza; nunca duplica. */
+      const rCpfAut=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao});
+      if(!rCpfAut.ok) throw (rCpfAut.error || new Error('Não foi possível autorizar o CPF para este evento.'));
+
+      /* PASSO 5 — Participação real, mesma RPC do fluxo público. Ela
+         já verifica cpfs_autorizados internamente (que acabamos de
+         garantir no passo anterior) e usa a função de lá. */
+      const {error:erroPart}=await sb.rpc('registrar_participacao',{
+        p_evento_id:currentEventId, p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits
+      });
+      if(erroPart) throw erroPart;
+
+      /* PASSO 6/7 — só chega aqui se os passos críticos deram certo:
+         mantém a Escala Oficial funcionando exatamente como antes. */
+      staff.push({id:uid(), eventId:currentEventId, nome, cpf:cpfLimpo, telefone:telefoneDigits, funcao, escalado:true, compareceu:false, data:currentEvent().data||'', entrada:'', saida:'', diasTrabalhados:1, pago:false});
+      await saveStaff();
+
+      /* PASSO 8 — recarrega participações/escala/presença/fechamento
+         para refletir a nova participação imediatamente, sem precisar
+         trocar de aba manualmente. */
+      await loadDiasEscalaPresenca();
+      renderShell();
+      showToast('Colaborador cadastrado e vinculado ao evento com sucesso.');
+    }catch(err){
+      console.error('Erro ao cadastrar colaborador manualmente:', err);
+      showToast('Não foi possível concluir o cadastro: '+formatarErroSupabase(err).replace(/<br>/g,' — ').replace(/<[^>]+>/g,''));
+      btnAdd.disabled=false; btnAdd.textContent='+ Adicionar manualmente';
+    }
   };
   const btnNotifyAll=document.getElementById('btnNotifyAll');
   if(btnNotifyAll) btnNotifyAll.onclick=()=>{
