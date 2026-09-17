@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 06:30';
+const APP_VERSION = '27/08/2026 06:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3290,13 +3290,25 @@ function buscarColaboradorPorCpf(cpf){
   return colaboradoresBanco.find(c=>String(c.cpf||'').replace(/\D/g,'')===norm) || null;
 }
 function filtrarColaboradoresBanco(lista){
-  const buscaDigits=(colaboradoresBuscaCpf||colaboradoresBuscaNome).replace(/\D/g,'');
+  /* CORREÇÃO DESTA RODADA — antes só considerava nome/CPF (com OU
+     entre eles); os outros 4 filtros já existiam na interface e
+     tinham handlers corretos, mas eram ignorados aqui. Agora os 6
+     filtros existentes são combinados com E: cada filtro preenchido
+     restringe mais a lista. Nenhum filtro preenchido = lista
+     completa (limpar filtros restaura tudo). */
   const buscaTexto=colaboradoresBuscaNome.trim().toLowerCase();
-  if(!colaboradoresBuscaNome.trim() && !colaboradoresBuscaCpf.trim()) return lista;
+  const buscaCpfDigits=colaboradoresBuscaCpf.replace(/\D/g,'');
+  const buscaTelDigits=colaboradoresBuscaTelefone.replace(/\D/g,'');
+  const buscaCidade=colaboradoresBuscaCidade.trim().toLowerCase();
   return lista.filter(c=>{
-    const matchCpf = buscaDigits && String(c.cpf||'').replace(/\D/g,'').includes(buscaDigits);
-    const matchNome = buscaTexto && (c.nome||'').toLowerCase().includes(buscaTexto);
-    return matchCpf || matchNome;
+    if(buscaTexto && !(c.nome||'').toLowerCase().includes(buscaTexto)) return false;
+    if(buscaCpfDigits && !String(c.cpf||'').replace(/\D/g,'').includes(buscaCpfDigits)) return false;
+    if(buscaTelDigits && !String(c.telefone||'').replace(/\D/g,'').includes(buscaTelDigits)) return false;
+    if(buscaCidade && !(c.cidade||'').toLowerCase().includes(buscaCidade)) return false;
+    if(colaboradoresBuscaGrandesEventos==='sim' && c.grandes_eventos!==true) return false;
+    if(colaboradoresBuscaGrandesEventos==='nao' && c.grandes_eventos!==false) return false;
+    if(colaboradoresBuscaSituacaoReciclagem && corStatusReciclagem(c.reciclagem).cor!==colaboradoresBuscaSituacaoReciclagem) return false;
+    return true;
   });
 }
 /* Classificação por subaba — reaproveita exatamente a mesma
