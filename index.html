@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 06:15';
+const APP_VERSION = '27/08/2026 06:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -997,11 +997,12 @@ function renderPublic(alreadySent){
           console.error('Falha ao consultar Banco de Colaboradores:', bancoErr);
         }
       }
+      /* RESTAURADO NESTA RODADA: RG/Identidade volta a ser
+         solicitado e obrigatório para Vigilante — decisão anterior de
+         remover foi revertida. Novo formato de máscara: UF-N.NNN.NNN
+         ou UF-NN.NNN.NNN (qualquer estado, nunca fixa MG). */
       const precisaIdentidade = ehVigilante && !(bancoExistente && bancoExistente.identidade);
-      /* "Data do curso" removida do link — não é mais solicitada
-         (aprovado nesta rodada). A coluna data_curso continua existindo
-         no banco, só não é mais coletada por aqui. */
-      const precisaNumeroDpf  = ehVigilante && !(bancoExistente && bancoExistente.numero_dpf); // opcional: mostrado quando faltar, mas nunca bloqueia o envio
+      const precisaNumeroDpf  = ehVigilante && !(bancoExistente && bancoExistente.numero_dpf);
       const precisaReciclagem = ehVigilante && !(bancoExistente && bancoExistente.reciclagem && reciclagemValidaAteFinalEvento(bancoExistente.reciclagem, ev));
       const precisaCidade     = ehVigilante && !(bancoExistente && bancoExistente.cidade);
       const precisaGrandesEventos = ehVigilante && !(bancoExistente && (bancoExistente.grandes_eventos===true || bancoExistente.grandes_eventos===false));
@@ -1022,7 +1023,7 @@ function renderPublic(alreadySent){
           ${precisaIdentidade?`
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">RG</label>
-            <input type="text" id="intIdentidade" placeholder="12.345.678">
+            <input type="text" id="intIdentidade" placeholder="UF-N.NNN.NNN">
           </div>`:''}
           ${precisaReciclagem?`
           <div class="field" style="text-align:left;">
@@ -1045,7 +1046,7 @@ function renderPublic(alreadySent){
           </div>`:''}
           ${precisaNumeroDpf?`
           <div class="field" style="text-align:left;">
-            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF (opcional)</label>
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
             <input type="text" id="intNumeroDpf" placeholder="1234567/8901">
           </div>`:''}
           <button class="btn btn-amber" id="btnConfirmarParticipacao" style="width:100%;padding:12px;margin-top:10px;">Confirmar participação</button>
@@ -1065,10 +1066,10 @@ function renderPublic(alreadySent){
         intNomeEl.value=intNomeEl.value.toUpperCase();
         intNomeEl.setSelectionRange(pos,pos);
       };
-      const intIdentidadeEl=document.getElementById('intIdentidade');
-      if(intIdentidadeEl) intIdentidadeEl.oninput=()=>maskIdentidadeInput(intIdentidadeEl);
       const intNumeroDpfEl=document.getElementById('intNumeroDpf');
       if(intNumeroDpfEl) intNumeroDpfEl.oninput=()=>maskNumeroDpfInput(intNumeroDpfEl);
+      const intIdentidadeEl=document.getElementById('intIdentidade');
+      if(intIdentidadeEl) intIdentidadeEl.oninput=()=>maskIdentidadeInput(intIdentidadeEl);
 
       document.getElementById('btnConfirmarParticipacao').onclick=async ()=>{
         const nome=nomeExibicao(document.getElementById('intNome').value);
@@ -1081,16 +1082,14 @@ function renderPublic(alreadySent){
         /* Campos extras de crachá (só quando exibidos nesta rodada) —
            mesma ordem de validação já usada no link específico de
            crachá: presença -> completude da máscara -> validade da
-           reciclagem -> só então salva. "Data do curso" removida
-           (não é mais coletada). Nº DPF passou a ser OPCIONAL —
-           quando o campo aparece (ainda faltando no Banco) e o
-           colaborador o preenche, valida o formato; se deixar em
-           branco, segue sem bloquear. */
+           reciclagem -> só então salva. RG/Identidade RESTAURADO
+           nesta rodada — voltou a ser obrigatório, novo formato
+           UF-N.NNN.NNN/UF-NN.NNN.NNN. Nº DPF continua obrigatório. */
         let identidade=null, reciclagem=null, numeroDpf=null;
         if(precisaIdentidade){
           identidade=formatIdentidadeMG(document.getElementById('intIdentidade').value);
-          if(!identidade){ erroBox.textContent='Informe a identidade.'; return; }
-          if(contarDigitos(identidade)<8){ erroBox.textContent='IDENTIDADE INCOMPLETA. PREENCHA TODOS OS NÚMEROS.'; return; }
+          if(!identidade){ erroBox.textContent='Informe o RG.'; return; }
+          if(!identidadeValida(identidade)){ erroBox.textContent='RG INCOMPLETO OU EM FORMATO INVÁLIDO. USE UF-N.NNN.NNN.'; return; }
         }
         if(precisaReciclagem){
           reciclagem=document.getElementById('intReciclagem').value;
@@ -1103,10 +1102,9 @@ function renderPublic(alreadySent){
         }
         if(precisaNumeroDpf){
           const numeroDpfDigitado=document.getElementById('intNumeroDpf').value.trim();
-          if(numeroDpfDigitado){
-            numeroDpf=formatNumeroDpfMG(numeroDpfDigitado);
-            if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS OU DEIXE EM BRANCO.'; return; }
-          }
+          if(!numeroDpfDigitado){ erroBox.textContent='Nº DPF É OBRIGATÓRIO.'; return; }
+          numeroDpf=formatNumeroDpfMG(numeroDpfDigitado);
+          if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
         }
         let cidade=null, grandesEventos=null;
         if(precisaCidade){
@@ -1285,15 +1283,15 @@ function renderPublicCracha(){
             <input type="text" id="crachaNome" value="${escapeHtml(registro.nome||'')}" placeholder="Nome completo">
           </div>
           <div class="field" style="text-align:left;">
-            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Identidade</label>
-            <input type="text" id="crachaIdentidade" value="${escapeHtml(formatIdentidadeMG(registro.identidade||''))}" placeholder="12.345.678">
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">RG</label>
+            <input type="text" id="crachaIdentidade" value="${escapeHtml(formatIdentidadeMG(registro.identidade||''))}" placeholder="UF-N.NNN.NNN">
           </div>
           <div class="field" style="text-align:left;">
             <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Data de vencimento da reciclagem/curso</label>
             <input type="date" id="crachaReciclagem" value="${escapeHtml(registro.reciclagem||'')}">
           </div>
           <div class="field" style="text-align:left;">
-            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF (opcional)</label>
+            <label style="font-size:11px;color:var(--muted);text-transform:uppercase;">Nº DPF</label>
             <input type="text" id="crachaNumeroDpf" value="${escapeHtml(formatNumeroDpfMG(registro.numero_dpf||''))}" placeholder="1234567/8901">
           </div>
           <div id="erroCracha" style="color:var(--red); font-size:13px; margin-top:8px;"></div>
@@ -1302,8 +1300,8 @@ function renderPublicCracha(){
       `;
 
       const identidadeInp=document.getElementById('crachaIdentidade');
-      const dpfInp=document.getElementById('crachaNumeroDpf');
       identidadeInp.oninput=()=>maskIdentidadeInput(identidadeInp);
+      const dpfInp=document.getElementById('crachaNumeroDpf');
       dpfInp.oninput=()=>maskNumeroDpfInput(dpfInp);
 
       const marcarCampo=(el, invalido)=>{ el.style.borderColor = invalido ? 'var(--red)' : ''; };
@@ -1324,14 +1322,15 @@ function renderPublicCracha(){
         const numeroDpf=formatNumeroDpfMG(numeroDpfEl.value);
 
         /* ORDEM DAS VALIDAÇÕES, TODAS ANTES DE CHAMAR O SUPABASE:
-           1) presença dos campos obrigatórios (Nº DPF NÃO é mais
-           obrigatório); 2) completude de Identidade (e do Nº DPF, só
-           se ele tiver sido informado); 3) validade da Reciclagem
+           1) presença dos campos obrigatórios (RG/Identidade
+           RESTAURADO nesta rodada; Nº DPF continua obrigatório);
+           2) completude do RG e do Nº DPF; 3) validade da Reciclagem
            contra o período do evento (regra direta, sem +2 anos). */
         const faltando=[];
         if(!nome) faltando.push({el:nomeEl, rotulo:'NOME COMPLETO'});
-        if(!identidade) faltando.push({el:identidadeEl, rotulo:'IDENTIDADE'});
+        if(!identidade) faltando.push({el:identidadeEl, rotulo:'RG'});
         if(!reciclagem) faltando.push({el:reciclagemEl, rotulo:'DATA DE VENCIMENTO DA RECICLAGEM/CURSO'});
+        if(!numeroDpf) faltando.push({el:numeroDpfEl, rotulo:'Nº DPF'});
         if(faltando.length){
           faltando.forEach(f=>marcarCampo(f.el,true));
           erroBox.innerHTML=`<b>NÃO FOI POSSÍVEL SALVAR OS DADOS</b><br>CORRIJA OS SEGUINTES CAMPOS:<br>${faltando.map(f=>'• '+f.rotulo).join('<br>')}`;
@@ -1339,8 +1338,8 @@ function renderPublicCracha(){
         }
 
         const incompletos=[];
-        if(contarDigitos(identidade)<8){ incompletos.push('IDENTIDADE INCOMPLETA. PREENCHA TODOS OS NÚMEROS.'); marcarCampo(identidadeEl,true); }
-        if(numeroDpf && contarDigitos(numeroDpf)<11){ incompletos.push('Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS OU DEIXE EM BRANCO.'); marcarCampo(numeroDpfEl,true); }
+        if(!identidadeValida(identidade)){ incompletos.push('RG EM FORMATO INVÁLIDO. USE UF-N.NNN.NNN.'); marcarCampo(identidadeEl,true); }
+        if(contarDigitos(numeroDpf)<11){ incompletos.push('Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'); marcarCampo(numeroDpfEl,true); }
         if(incompletos.length){
           erroBox.innerHTML=incompletos.join('<br>');
           return;
@@ -1361,7 +1360,7 @@ function renderPublicCracha(){
         try{
           const {error:erroSalvar}=await sb.rpc('salvar_colaborador_cracha_v3',{
             p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao,
-            p_identidade:identidade, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf||null
+            p_identidade:identidade, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
           });
           if(erroSalvar) throw erroSalvar;
 
@@ -3121,16 +3120,41 @@ function maskTelefoneInput(el){ el.value=formatTelefone(el.value); }
    reconstrução progressiva da máscara. */
 function formatIdentidadeMG(v){
   /* Nome da função preservado por compatibilidade com todos os pontos
-     de chamada já existentes (Banco de Colaboradores, os dois links
-     públicos, impressão do crachá) — só o COMPORTAMENTO mudou: não
-     fixa mais nenhuma UF. RG de qualquer estado brasileiro, só com
-     máscara de pontuação sobre os números, sem prefixo de sigla. */
-  const d=(v||'').replace(/\D/g,'').slice(0,8);
-  if(!d) return '';
-  let out=d.slice(0,2);
-  if(d.length>2) out+='.'+d.slice(2,5);
-  if(d.length>5) out+='.'+d.slice(5,8);
+     de chamada já existentes. NOVO FORMATO (aprovado nesta rodada):
+     UF-N.NNN.NNN ou UF-NN.NNN.NNN — duas letras de UF (qualquer
+     estado, nunca fixa MG), traço, e a parte numérica com 7 ou 8
+     dígitos. A primeira divisão pode ter 1 ou 2 algarismos — como
+     isso é ambíguo enquanto a pessoa ainda está digitando, a regra
+     usada é: só quando o total de dígitos chegar a 8 é que se aplica
+     o agrupamento de 2 dígitos na primeira parte; com 7 dígitos ou
+     menos, agrupa como 1 dígito na primeira parte. Isso reflui
+     corretamente assim que o 8º dígito é digitado. */
+  const raw=(v||'').toUpperCase();
+  const uf=(raw.match(/^[A-Z]{0,2}/)||[''])[0];
+  const digits=raw.replace(/[^0-9]/g,'').slice(0,8);
+  if(!uf && !digits) return '';
+  let out=uf;
+  if(!digits) return out;
+  if(out) out+='-';
+  if(digits.length>=8){
+    out+=digits.slice(0,2);
+    if(digits.length>2) out+='.'+digits.slice(2,5);
+    if(digits.length>5) out+='.'+digits.slice(5,8);
+  } else {
+    out+=digits.slice(0,1);
+    if(digits.length>1) out+='.'+digits.slice(1,4);
+    if(digits.length>4) out+='.'+digits.slice(4,7);
+  }
   return out;
+}
+/* Validação de completude do RG — UF de 2 letras + 7 ou 8 dígitos
+   (as duas variações do formato aprovado). Usada nos 3 formulários
+   que coletam RG, para uma única fonte de verdade da regra. */
+function identidadeValida(v){
+  const raw=(v||'').toUpperCase();
+  const uf=(raw.match(/^[A-Z]{0,2}/)||[''])[0];
+  const digits=raw.replace(/[^0-9]/g,'');
+  return uf.length===2 && (digits.length===7 || digits.length===8);
 }
 function maskIdentidadeInput(el){ el.value=formatIdentidadeMG(el.value); }
 function formatNumeroDpfMG(v){
@@ -3427,7 +3451,7 @@ function abrirFormularioColaboradorBanco(existente){
       </div>
       <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
-      <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="12.345.678" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
+      <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="UF-N.NNN.NNN" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
       <div class="field"><label>Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
       <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
       <div class="field"><label>Grandes eventos</label>
@@ -3437,7 +3461,7 @@ function abrirFormularioColaboradorBanco(existente){
           <option value="sim" ${existente&&existente.grandes_eventos===true?'selected':''}>Sim</option>
         </select>
       </div>
-      <div class="field"><label>Nº DPF (opcional)</label><input type="text" id="fcbNumeroDpf" placeholder="1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
+      <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
       <div class="field"><label>Telefone</label><input type="text" id="fcbTelefone" placeholder="(00) 0 0000-0000" maxlength="16" value="${existente&&existente.telefone?formatTelefone(existente.telefone):''}"></div>
       <div id="fcbErro" style="color:var(--red); font-size:13px; margin-top:6px;"></div>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
@@ -3472,17 +3496,17 @@ function abrirFormularioColaboradorBanco(existente){
     const cpfLimpo=cpfEl.value.replace(/\D/g,'');
     const identidade=formatIdentidadeMG(identidadeEl.value);
     const reciclagem=document.getElementById('fcbReciclagem').value;
-    const numeroDpf=formatNumeroDpfMG(dpfEl.value); // opcional — sem validação de obrigatoriedade
+    const numeroDpf=formatNumeroDpfMG(dpfEl.value);
     const cidade=document.getElementById('fcbCidade').value.trim();
     const grandesEventosValor=document.getElementById('fcbGrandesEventos').value;
     const telefoneDigits=telEl.value.replace(/\D/g,'');
 
     /* Campos obrigatórios do Novo Colaborador (também na edição) —
-       aprovado nesta rodada: sempre exigidos, independente da função
-       (diferente do link público, que só exige para Vigilante). Nº
-       DPF é o único opcional. Validação client-side aqui; a mesma
-       regra também passa a existir na RPC (backend), para que não
-       seja possível contornar salvando por outro caminho. */
+       RG/Identidade RESTAURADO nesta rodada (voltou a ser
+       obrigatório). Nº DPF continua obrigatório. Validação
+       client-side aqui; a mesma regra também passa a existir na RPC
+       (backend), para que não seja possível contornar salvando por
+       outro caminho. */
     if(!funcao){ erroBox.textContent='Selecione a função.'; return; }
     if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
     if(cpfLimpo.length!==11){ erroBox.textContent='CPF INVÁLIDO. VERIFIQUE OS NÚMEROS INFORMADOS.'; return; }
@@ -3490,11 +3514,14 @@ function abrirFormularioColaboradorBanco(existente){
       erroBox.textContent='Este CPF já está cadastrado no Banco de Colaboradores. Use "Editar" na listagem em vez de criar um novo.';
       return;
     }
-    if(!identidade){ erroBox.textContent='Informe a identidade/RG.'; return; }
+    if(!identidade){ erroBox.textContent='Informe o RG.'; return; }
+    if(!identidadeValida(identidade)){ erroBox.textContent='RG EM FORMATO INVÁLIDO. USE UF-N.NNN.NNN.'; return; }
     if(!telefoneDigits){ erroBox.textContent='Informe o telefone.'; return; }
     if(!reciclagem){ erroBox.textContent='Informe a data de vencimento da reciclagem/curso.'; return; }
     if(!cidade){ erroBox.textContent='Informe a cidade.'; return; }
     if(grandesEventosValor===''){ erroBox.textContent='Selecione se participa de grandes eventos.'; return; }
+    if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
+    if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
     const grandesEventos=grandesEventosValor==='sim';
 
     const btnSalvar=document.getElementById('fcbSalvar');
@@ -3706,6 +3733,7 @@ function abrirJanelaImpressaoCrachas(selecionados){
   .verso-header-empresa{white-space:nowrap;}
   .verso-grid{display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(2,1fr); border:1px solid #000; flex:1;}
   .verso-cel{border:1px solid #000; padding:1.5mm 2mm; font-size:12px; display:flex; flex-direction:column; justify-content:center; gap:1mm; overflow:hidden;}
+  .verso-cel.verso-dpf{grid-column:1 / 3;}
   .verso-cel span{font-size:12px; font-weight:600;}
   .verso-assinatura{margin-top:auto; padding-top:2mm; display:flex; flex-direction:column; align-items:center;}
   .verso-assinatura-linha{border-top:1px solid #000; width:70%; margin-bottom:2mm;}
