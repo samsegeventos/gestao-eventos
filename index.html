@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 07:00';
+const APP_VERSION = '27/08/2026 07:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3499,14 +3499,50 @@ function renderListaColaboradoresBanco(){
     const buscaAtiva=colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim()||colaboradoresBuscaTelefone.trim()||colaboradoresBuscaCidade.trim()||colaboradoresBuscaGrandesEventos||colaboradoresBuscaSituacaoReciclagem;
     return `<div class="empty"><b>${buscaAtiva?'Nenhum resultado para essa busca':'Nenhum colaborador nesta categoria ainda'}</b>${buscaAtiva?'':'Cadastre manualmente ou aguarde o preenchimento pelo link do evento.'}</div>`;
   }
-  /* Ordem de colunas: Nome, CPF, RG, Data de Vencimento da
-     Reciclagem/Curso (com cor de status), Cidade, Grandes Eventos,
-     Nº DPF, Telefone — sem a coluna Função (continua armazenada e
-     usada para a classificação acima, só não ocupa coluna aqui).
-     "Data do curso" não aparece mais — data_curso continua intacta
-     no banco, só deixou de ser coletada/exibida. */
   const nomesOrdenados=[...lista].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   const CORES_RECICLAGEM={vermelho:'var(--red)', amarelo:'var(--amber)', verde:'var(--teal)', cinza:'var(--muted)'};
+
+  /* NOVO NESTA RODADA — a subaba "brigadistas" já existia e já filtra
+     só colaboradores com _ehBrigadista=true (colaboradorNaSubaba),
+     então aqui dentro TODOS os itens da lista já são Brigadistas.
+     Por isso a ramificação é por subaba, não célula a célula: quando
+     a subaba ativa é "brigadistas", a coluna Grandes Eventos some e
+     a coluna Nº DPF vira Nº Registro Brigadista, usando
+     numero_registro_brigadista (nunca numero_dpf). A subaba de
+     Vigilantes (e "outras") continua com a tabela original, intacta,
+     usando numero_dpf normalmente — confirmado por diff. */
+  if(colaboradoresSubaba==='brigadistas'){
+    return `
+      <table>
+        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento do curso</th><th>Cidade</th><th>Nº Registro Brigadista</th><th>Telefone</th><th></th></tr></thead>
+        <tbody>
+          ${nomesOrdenados.map((c,i)=>{
+            const status=corStatusReciclagem(c.reciclagem);
+            return `
+            <tr data-cpf="${c.cpf}">
+              <td class="mono">${i+1}</td>
+              <td>${escapeHtml(nomeExibicao(c.nome))}</td>
+              <td class="mono">${formatCpf(c.cpf)}</td>
+              <td>${escapeHtml(c.identidade||'—')}</td>
+              <td class="mono"><span style="color:${CORES_RECICLAGEM[status.cor]}; font-weight:600;" title="${escapeHtml(status.rotulo)}">${c.reciclagem?formatDate(c.reciclagem):'—'}${c.reciclagem?` · ${escapeHtml(status.rotulo)}`:''}</span></td>
+              <td>${escapeHtml(c.cidade||'—')}</td>
+              <td>${escapeHtml(c.numero_registro_brigadista||'—')}</td>
+              <td class="mono">${c.telefone?formatTelefone(c.telefone):'—'}</td>
+              <td><button class="btn btn-ghost btn-sm btn-editar-colaborador-banco">Editar</button></td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  /* Ordem de colunas (Vigilantes/outras, INTOCADA): Nome, CPF, RG,
+     Data de Vencimento da Reciclagem/Curso (com cor de status),
+     Cidade, Grandes Eventos, Nº DPF, Telefone — sem a coluna Função
+     (continua armazenada e usada para a classificação acima, só não
+     ocupa coluna aqui). "Data do curso" não aparece mais —
+     data_curso continua intacta no banco, só deixou de ser
+     coletada/exibida. */
   return `
     <table>
       <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento da reciclagem/curso</th><th>Cidade</th><th>Grandes eventos</th><th>Nº DPF</th><th>Telefone</th><th></th></tr></thead>
@@ -3595,16 +3631,21 @@ function abrirFormularioColaboradorBanco(existente){
       <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
       <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="UF-N.NNN.NNN" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
-      <div class="field"><label>Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
+      <div class="field"><label id="fcbLabelReciclagem">Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
       <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
-      <div class="field"><label>Grandes eventos</label>
-        <select id="fcbGrandesEventos">
-          <option value="" ${!(existente&&(existente.grandes_eventos===true||existente.grandes_eventos===false))?'selected':''}>Selecione</option>
-          <option value="nao" ${existente&&existente.grandes_eventos===false?'selected':''}>Não</option>
-          <option value="sim" ${existente&&existente.grandes_eventos===true?'selected':''}>Sim</option>
-        </select>
+      <div id="fcbCamposVigilante">
+        <div class="field"><label>Grandes eventos</label>
+          <select id="fcbGrandesEventos">
+            <option value="" ${!(existente&&(existente.grandes_eventos===true||existente.grandes_eventos===false))?'selected':''}>Selecione</option>
+            <option value="nao" ${existente&&existente.grandes_eventos===false?'selected':''}>Não</option>
+            <option value="sim" ${existente&&existente.grandes_eventos===true?'selected':''}>Sim</option>
+          </select>
+        </div>
+        <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
       </div>
-      <div class="field"><label>Nº DPF</label><input type="text" id="fcbNumeroDpf" placeholder="1234567/8901" value="${escapeHtml(existente?formatNumeroDpfMG(existente.numero_dpf||''):'')}"></div>
+      <div id="fcbCamposBrigadista">
+        <div class="field"><label>Nº Registro Brigadista</label><input type="text" id="fcbNumeroRegistroBrigadista" placeholder="Ex: F0007596" value="${escapeHtml(existente?(existente.numero_registro_brigadista||''):'')}"></div>
+      </div>
       <div class="field"><label>Telefone</label><input type="text" id="fcbTelefone" placeholder="(00) 0 0000-0000" maxlength="16" value="${existente&&existente.telefone?formatTelefone(existente.telefone):''}"></div>
       <div id="fcbErro" style="color:var(--red); font-size:13px; margin-top:6px;"></div>
       <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
@@ -3627,7 +3668,22 @@ function abrirFormularioColaboradorBanco(existente){
   nomeEl.oninput=()=>{ const pos=nomeEl.selectionStart; nomeEl.value=nomeEl.value.toUpperCase(); nomeEl.setSelectionRange(pos,pos); };
   const funcaoSel=document.getElementById('fcbFuncao');
   const funcaoOutra=document.getElementById('fcbFuncaoOutra');
-  funcaoSel.onchange=()=>{ funcaoOutra.style.display = funcaoSel.value==='__outra__' ? 'block' : 'none'; };
+  const camposVigilante=document.getElementById('fcbCamposVigilante');
+  const camposBrigadista=document.getElementById('fcbCamposBrigadista');
+  const labelReciclagem=document.getElementById('fcbLabelReciclagem');
+  /* NOVO NESTA RODADA — alterna os campos exibidos conforme a função
+     selecionada. BRIGADISTA: some Grandes Eventos/Nº DPF, aparece Nº
+     Registro Brigadista, rótulo da data vira "Data de vencimento do
+     curso". Vigilante/outras: exatamente como já era antes —
+     Grandes Eventos e Nº DPF, rótulo original da data. */
+  const atualizarCamposPorFuncao=()=>{
+    const ehBrig = funcaoSel.value==='BRIGADISTA';
+    camposVigilante.style.display = ehBrig ? 'none' : '';
+    camposBrigadista.style.display = ehBrig ? '' : 'none';
+    labelReciclagem.textContent = ehBrig ? 'Data de vencimento do curso' : 'Data de vencimento da reciclagem/curso';
+  };
+  funcaoSel.onchange=()=>{ funcaoOutra.style.display = funcaoSel.value==='__outra__' ? 'block' : 'none'; atualizarCamposPorFuncao(); };
+  atualizarCamposPorFuncao(); // aplica o estado inicial certo já na abertura (novo cadastro ou edição)
 
   document.getElementById('fcbCancelar').onclick=()=>overlay.remove();
 
@@ -3641,15 +3697,20 @@ function abrirFormularioColaboradorBanco(existente){
     const reciclagem=document.getElementById('fcbReciclagem').value;
     const numeroDpf=formatNumeroDpfMG(dpfEl.value);
     const cidade=document.getElementById('fcbCidade').value.trim();
-    const grandesEventosValor=document.getElementById('fcbGrandesEventos').value;
+    const ehBrig = funcao==='BRIGADISTA';
+    const grandesEventosValor = ehBrig ? '' : document.getElementById('fcbGrandesEventos').value;
     const telefoneDigits=telEl.value.replace(/\D/g,'');
+    const numeroRegistroBrigadista = ehBrig ? document.getElementById('fcbNumeroRegistroBrigadista').value.trim() : '';
 
     /* Campos obrigatórios do Novo Colaborador (também na edição) —
        RG/Identidade RESTAURADO nesta rodada (voltou a ser
-       obrigatório). Nº DPF continua obrigatório. Validação
-       client-side aqui; a mesma regra também passa a existir na RPC
-       (backend), para que não seja possível contornar salvando por
-       outro caminho. */
+       obrigatório). Validação client-side aqui; a mesma regra
+       também passa a existir na RPC (backend), para que não seja
+       possível contornar salvando por outro caminho. BRIGADISTA
+       (novo nesta rodada): não exige Grandes Eventos/DPF — exige Nº
+       Registro Brigadista no lugar, salvo na RPC administrativa
+       própria (upsert_colaborador_banco_brigadista_v1), sem tocar
+       em upsert_colaborador_banco (continua exclusiva de Vigilante). */
     if(!funcao){ erroBox.textContent='Selecione a função.'; return; }
     if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
     if(cpfLimpo.length!==11){ erroBox.textContent='CPF INVÁLIDO. VERIFIQUE OS NÚMEROS INFORMADOS.'; return; }
@@ -3660,17 +3721,27 @@ function abrirFormularioColaboradorBanco(existente){
     if(!identidade){ erroBox.textContent='Informe o RG.'; return; }
     if(!identidadeValida(identidade)){ erroBox.textContent='RG EM FORMATO INVÁLIDO. USE UF-N.NNN.NNN.'; return; }
     if(!telefoneDigits){ erroBox.textContent='Informe o telefone.'; return; }
-    if(!reciclagem){ erroBox.textContent='Informe a data de vencimento da reciclagem/curso.'; return; }
+    if(!reciclagem){ erroBox.textContent=ehBrig?'Informe a data de vencimento do curso.':'Informe a data de vencimento da reciclagem/curso.'; return; }
     if(!cidade){ erroBox.textContent='Informe a cidade.'; return; }
-    if(grandesEventosValor===''){ erroBox.textContent='Selecione se participa de grandes eventos.'; return; }
-    if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
-    if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
+    if(ehBrig){
+      if(!numeroRegistroBrigadista){ erroBox.textContent='Informe o Nº Registro Brigadista.'; return; }
+    } else {
+      if(grandesEventosValor===''){ erroBox.textContent='Selecione se participa de grandes eventos.'; return; }
+      if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
+      if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
+    }
     const grandesEventos=grandesEventosValor==='sim';
 
     const btnSalvar=document.getElementById('fcbSalvar');
     btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
     try{
-      const r=await chamarRpcGestor('upsert_colaborador_banco',{
+      const r = ehBrig
+        ? await chamarRpcGestor('upsert_colaborador_banco_brigadista_v1',{
+            p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits||null,
+            p_identidade:identidade||null, p_reciclagem:reciclagem||null,
+            p_numero_registro_brigadista:numeroRegistroBrigadista||null, p_cidade:cidade||null
+          })
+        : await chamarRpcGestor('upsert_colaborador_banco',{
         p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
         p_identidade:identidade||null, p_data_curso:null, p_reciclagem:reciclagem||null,
         p_numero_dpf:numeroDpf||null, p_cidade:cidade||null, p_grandes_eventos:grandesEventos
@@ -3883,7 +3954,7 @@ function abrirJanelaImpressaoCrachas(selecionados){
         </div>
         <div class="face-verso">
           <div class="verso-header">
-            <div>VÁLIDO SOMENTE EM EVENTOS DA EMPRESA</div>
+            <div>VÁLIDO SOMENTE EM EVENTOS DO GRUPO ANJOS DA PAZ</div>
             <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
@@ -4015,7 +4086,7 @@ function abrirJanelaImpressaoCrachasBrigadista(selecionados){
         </div>
         <div class="face-verso">
           <div class="verso-header">
-            <div>VÁLIDO SOMENTE EM EVENTOS DA EMPRESA</div>
+            <div>VÁLIDO SOMENTE EM EVENTOS DO GRUPO ANJOS DA PAZ</div>
             <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
