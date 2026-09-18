@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 08:00';
+const APP_VERSION = '27/08/2026 08:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1102,7 +1102,7 @@ function renderPublic(alreadySent){
               console.error('Falha ao marcar cadastro concluído em CPFs Autorizados (Brigadista):', concluidoErr);
             }
             const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha_brigadista_v1',{
-              p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
+              p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcaoCategoriaBanco(registro.funcao), p_telefone:telefoneDigits,
               p_identidade:identidade, p_reciclagem:vencimento, p_numero_registro_brigadista:registro_,
               p_cidade:cidade
             });
@@ -1303,7 +1303,7 @@ function renderPublic(alreadySent){
              validados dentro da própria RPC agora (ver SQL entregue). */
           if(ehVigilante){
             const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha_v3',{
-              p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao, p_telefone:telefoneDigits,
+              p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcaoCategoriaBanco(registro.funcao), p_telefone:telefoneDigits,
               p_identidade:identidade, p_data_curso:null, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf,
               p_cidade:cidade, p_grandes_eventos:grandesEventos
             });
@@ -1491,7 +1491,7 @@ function renderPublicCracha(){
 
         try{
           const {error:erroSalvar}=await sb.rpc('salvar_colaborador_cracha_v3',{
-            p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:registro.funcao,
+            p_evento_id:ev.id, p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcaoCategoriaBanco(registro.funcao),
             p_identidade:identidade, p_reciclagem:reciclagem, p_numero_dpf:numeroDpf
           });
           if(erroSalvar) throw erroSalvar;
@@ -1919,6 +1919,14 @@ function baseDaFuncaoDisplay(funcaoNorm){
 function ehFuncaoVigilante(funcao){
   const norm=normalizaFuncaoDisplay(funcao);
   return norm.startsWith('VIGILANTE') || norm==='SUPERVISOR' || norm==='COORDENADOR';
+}
+/* Categoria profissional gravada no Banco de Colaboradores.
+   Supervisor e Coordenador são funções de liderança exercidas por
+   vigilantes; por isso o cadastro central sempre grava VIGILANTE.
+   A função específica continua sendo preservada nas tabelas do evento
+   (CPFs Autorizados/participações/escala). */
+function funcaoCategoriaBanco(funcao){
+  return ehFuncaoVigilante(funcao) ? 'VIGILANTE' : normalizaFuncaoDisplay(funcao);
 }
 function ordenarValoresFuncaoParaExibicao(lista){
   /* Ordem OFICIAL fixa dos grupos (Coordenador, Supervisor, Vigilante,
@@ -3390,6 +3398,14 @@ async function loadColaboradoresBanco(){
   const {data,error}=await sb.rpc('listar_colaboradores_banco',{});
   if(error){ console.error(error); colaboradoresBanco=[]; return; }
   colaboradoresBanco=data||[];
+  /* NORMALIZAÇÃO PROFISSIONAL — registros antigos que foram gravados
+     como SUPERVISOR/COORDENADOR continuam sendo vigilantes. Na tela do
+     Banco de Colaboradores, a categoria profissional deve aparecer como
+     VIGILANTE. A função específica do evento não é alterada por esta
+     normalização, pois ela vive nas participações/escala. */
+  colaboradoresBanco.forEach(c=>{
+    if(ehFuncaoVigilante(c.funcao)) c.funcao='VIGILANTE';
+  });
   /* CORREÇÃO CRÍTICA (2ª rodada, ajustada conforme diagnóstico
      confirmado) — a classificação por histórico de participações
      (abaixo) sozinha deixava colaboradores recém-cadastrados pelo
@@ -3865,7 +3881,7 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
         });
       } else {
         r = await chamarRpcGestor('upsert_colaborador_banco',{
-          p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
+          p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcaoCategoriaBanco(funcao), p_telefone:telefoneDigits||null,
           p_identidade:identidade||null, p_data_curso:null, p_reciclagem:reciclagem||null,
           p_numero_dpf:numeroDpf||null, p_cidade:cidade||null, p_grandes_eventos:grandesEventos
         });
@@ -4829,7 +4845,7 @@ function attachDetailHandlers(){
          público continua usando _v2 (inalterado em todos os seus 3
          pontos de chamada), que continua exigindo Vigilante completo. */
       const {error:erroBanco}=await sb.rpc('salvar_colaborador_cracha',{
-        p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits
+        p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcaoCategoriaBanco(funcao), p_telefone:telefoneDigits
       });
       if(erroBanco) throw erroBanco;
 
