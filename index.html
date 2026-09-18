@@ -250,10 +250,13 @@
     .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#d6d6d6 !important; color:#1a1a1a !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2 !important;}
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
-    .folha-fechamento{page-break-after:auto; margin-bottom:18px;}
-    .bloco-funcao-fechamento{page-break-inside:avoid;}
-    .subtotal-funcao-fechamento,.total-geral-evento-fechamento{page-break-inside:avoid;}
-    .folha-fechamento:last-child{page-break-after:auto;}
+    /* Impressão: eliminar páginas vazias causadas por altura mínima do layout/flex e por blocos que não cabem integralmente. */
+    html,body,.shell,#shell,.main{height:auto !important; min-height:0 !important;}
+    .shell{display:block !important;}
+    .folha-fechamento{page-break-after:auto; break-after:auto; margin-bottom:10px;}
+    .bloco-funcao-fechamento{page-break-inside:auto; break-inside:auto;}
+    .subtotal-funcao-fechamento,.total-geral-evento-fechamento{page-break-inside:avoid; break-inside:avoid;}
+    .folha-fechamento:last-child{page-break-after:auto; break-after:auto;}
     /* Compactação só na impressão (nunca na tela) — reduz o quanto for
        necessário para caber mais linhas por folha antes de precisar de
        uma nova página. Nunca esconde nem corta informação, só aperta
@@ -286,7 +289,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 08:45';
+const APP_VERSION = '27/08/2026 08:50';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3152,8 +3155,8 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
           </thead>
           <tbody>${linhas}</tbody>
         </table>
-        <div class="subtotal-funcao-fechamento" style="display:flex; justify-content:flex-end; margin-top:8px; padding:7px 10px; border-top:1px solid #ccc; font-weight:700; page-break-inside:avoid;">
-          Subtotal ${escapeHtml(grupo.funcao)}: <span style="margin-left:8px;">${brl(subtotal)}</span>
+        <div class="subtotal-funcao-fechamento" style="display:flex; justify-content:flex-end; margin-top:6px; padding:5px 10px; border-top:1px solid #ccc; font-weight:700; font-size:14px; page-break-inside:avoid; break-inside:avoid;">
+          Subtotal ${escapeHtml(grupo.funcao)}: <span style="margin-left:8px; font-size:14px;">${brl(subtotal)}</span>
         </div>
       </div>`;
   };
@@ -3162,7 +3165,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
   return `
     <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button></div>
     ${grupos.map(gerarTabelaFuncao).join('')}
-    <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid;">
+    <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid; break-inside:avoid;">
       TOTAL GERAL DO EVENTO: <span style="margin-left:10px;">${brl(totalGeral)}</span>
     </div>
   `;
