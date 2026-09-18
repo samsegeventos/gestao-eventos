@@ -250,7 +250,9 @@
     .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#d6d6d6 !important; color:#1a1a1a !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2 !important;}
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
-    .folha-fechamento{page-break-after:always; margin-bottom:0;}
+    .folha-fechamento{page-break-after:auto; margin-bottom:18px;}
+    .bloco-funcao-fechamento{page-break-inside:avoid;}
+    .subtotal-funcao-fechamento,.total-geral-evento-fechamento{page-break-inside:avoid;}
     .folha-fechamento:last-child{page-break-after:auto;}
     /* Compactação só na impressão (nunca na tela) — reduz o quanto for
        necessário para caber mais linhas por folha antes de precisar de
@@ -284,7 +286,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 08:30';
+const APP_VERSION = '27/08/2026 08:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -660,7 +662,7 @@ let escalaDias = [];
 let presencasNovas = [];
 let diaSelecionadoPresenca = null;
 let fechamentoVisao = 'colaborador'; // 'colaborador' ou 'funcao' — só estado de exibição, não afeta os dados
-let aprovacaoVisao = 'presidencia'; // 'presidencia' ou 'gestor' — toggle só de exibição, dentro de Aprovação do Gestor. Presidência é a visualização padrão ao abrir a aba.
+let aprovacaoVisao = 'gestor'; // mantido apenas por compatibilidade com versões anteriores; a Aprovação do Gestor possui uma única impressão.
 let fechamentoDados = [];
 /* ---- CPFs Autorizados (dentro do detalhe do evento atual) ---- */
 let cpfsAutorizadosLista = [];
@@ -2504,31 +2506,16 @@ function renderAprovacaoGestor(){
     return lockScreenHtml('A aprovação do fechamento só fica visível para o gestor.');
   }
   const ev=currentEvent();
-  /* Antes esta tela lia staff.filter(c=>c.escalado&&c.compareceu) — um
-     campo do pipeline antigo (Controle de Presença), que não é mais
-     preenchido por nenhuma tela desde que o Checkout por Dia passou a
-     ser a fonte real de presença. Por isso ficava sempre vazia. Agora
-     usa fechamentoDados, a mesma fonte já usada por "Fechamento
-     Financeiro" — nenhum cálculo novo, só reaproveita o que já vem
-     pronto de fechamento_evento(). As duas visualizações
-     (Presidência/Gestor) usam a mesma função compartilhada
-     renderTabelaFechamentoImpressao — sem duplicar a lógica. Fluxo
-     obrigatório desta rodada: Presidência é a visão padrão (sem CPF,
-     assinatura ou data) — só depois de "Aprovar fechamento" (mesmo
-     status já existente, ev.status) o Fechamento do Gestor (com CPF,
-     assinatura e data) fica liberado. */
+  /* Aprovação do Gestor: existe UMA ÚNICA impressão oficial nesta aba.
+     A antiga visualização/relatório separado da Presidência foi removida.
+     O fechamento continua usando exatamente fechamentoDados e o mesmo
+     status já existente para aprovação — nenhuma regra financeira nova. */
   if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem dados de fechamento</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
   const aprovado=ev.status!=='aberto';
   return `
-    <div style="margin-bottom:14px;">
-      <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='gestor'?'active':''} ${aprovado?'':'btn-disabled'}" id="btnVisaoFechamentoGestor" ${aprovado?'':'disabled title="Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor."'} style="${aprovacaoVisao==='gestor'?'background:var(--accent-soft);':''}${aprovado?'':'opacity:0.45; cursor:not-allowed;'}">FECHAMENTO GESTOR / IMPRESSÃO</button>
-      <button class="btn btn-ghost btn-sm ${aprovacaoVisao==='presidencia'?'active':''}" id="btnVisaoFechamentoPresidencia" style="${aprovacaoVisao==='presidencia'?'background:var(--accent-soft);':''}">FECHAMENTO EVENTO PRESIDÊNCIA / IMPRESSÃO</button>
-    </div>
-    ${aprovacaoVisao==='gestor'
-      ? (aprovado
-          ? renderTabelaFechamentoImpressao(true, true, false)
-          : `<div class="empty"><b>Impressão bloqueada</b>Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor.</div>`)
-      : renderTabelaFechamentoImpressao(false, false, true)}
+    ${aprovado
+      ? renderTabelaFechamentoImpressao(true, true, false)
+      : `<div class="empty"><b>Impressão bloqueada</b>Aprove o fechamento da equipe para liberar o Fechamento Gestor / Impressão.</div>`}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -3085,34 +3072,19 @@ function funcaoParaImpressaoHTML(funcaoReal){
   return escapeHtml(norm||'—');
 }
 function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, listagemUnica){
-  /* Função única compartilhada entre "FECHAMENTO GESTOR / IMPRESSÃO"
-     (mostrarCpf=true, mostrarAssinaturaData=true, listagemUnica=false
-     — mantém a separação em duas folhas Vigilantes/Grupo Anjos da Paz,
-     sem alteração nesta rodada) e "FECHAMENTO EVENTO PRESIDÊNCIA /
-     IMPRESSÃO" (mostrarCpf=false, mostrarAssinaturaData=false,
-     listagemUnica=true — uma única listagem sequencial, sem separar
-     Vigilantes das demais funções) — mesma estrutura, mesma fonte de
-     dados (fechamentoDados, presencasNovas, eventoDias), sem
-     recalcular nenhum valor financeiro novo e sem duplicar a lógica
-     em dois lugares. O valor de cada dia é só o valor/diária da
-     função daquele colaborador (repetido dia a dia em que ele
-     trabalhou, segundo o registro real do Checkout), seguido das
-     horas adicionais daquele dia específico, se houver. Só existe UMA
-     coluna de valor ("VALOR" = valor_base) — a coluna "VALOR/DIA" foi
-     removida por duplicar essa informação. */
+  /* Fechamento Gestor / Impressão — relatório único.
+     IMPORTANTE: esta função altera somente a apresentação do relatório.
+     A fonte financeira continua sendo fechamentoDados e os valores
+     exibidos continuam sendo os campos já calculados pelo fechamento.
+     Cada função passa a ter sua própria tabela e seu subtotal aparece
+     imediatamente abaixo dela. O total geral aparece somente depois da
+     última tabela, somando os mesmos total_receber já existentes. */
   if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
   const ev=currentEvent();
-  const ehVigilante=f=>ehFuncaoVigilante(f.funcao);
-  const vigilantes=fechamentoDados.filter(ehVigilante);
-  const demais=fechamentoDados.filter(f=>!ehVigilante(f));
-  // Nome + Função [+ CPF] + 1 por dia + Dias + Valor + Adic./Desc./Total [+ Assinatura + Data]
-  const colspanDatas=(mostrarCpf?3:2)+eventoDias.length+5+(mostrarAssinaturaData?2:0); // Dias,Valor,Adic,Desc,Total = 5 colunas fixas depois dos dias
-  /* Cabeçalho de UMA linha só, repetido em cada página impressa
-     (thead nativo, com display:table-header-group): cliente + nome do
-     evento + período à esquerda, mês de referência à direita. Os
-     títulos "VIGILANTES"/"GRUPO ANJOS DA PAZ" NÃO entram aqui — ficam
-     só no título de cada seção (fora da tabela); o cabeçalho da
-     página começa direto em cliente + evento. */
+  const grupos=agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome);
+  if(!grupos.length) return `<div class="empty"><b>Sem funções para exibir</b></div>`;
+
+  const colspanDatas=(mostrarCpf?3:2)+eventoDias.length+5+(mostrarAssinaturaData?2:0);
   const cabecalhoRepetido=()=>`
     <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
@@ -3120,16 +3092,12 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
         <span>${escapeHtml(mesReferencia(ev))}</span>
       </div>
     </th></tr>`;
-  /* colgroup + table-layout:fixed: garante que a largura de cada
-     coluna é a MESMA sempre, em qualquer bloco/folha e com qualquer
-     quantidade de dias — não depende do conteúdo de cada linha para
-     calcular largura, que era a causa do desalinhamento em eventos
-     com muitos dias. */
+
   const colgroup=(()=>{
-    const antesDosDias = mostrarCpf ? ['15%','12%','9%'] : ['18%','15%'];             // Nome,Função[,CPF]
+    const antesDosDias = mostrarCpf ? ['15%','12%','9%'] : ['18%','15%'];
     const depoisDosDias = mostrarAssinaturaData
-      ? ['4%','8%','7%','7%','8%','15%','7%']    // Dias,Valor,Adic,Desc,Total,Assinatura,Data
-      : ['5%','10%','9%','9%','10%'];             // Dias,Valor,Adic,Desc,Total (mais espaço, sem assinatura/data)
+      ? ['4%','8%','7%','7%','8%','15%','7%']
+      : ['5%','10%','9%','9%','10%'];
     const fixas=[...antesDosDias, ...depoisDosDias];
     const somaFixas=fixas.reduce((s,v)=>s+parseFloat(v),0);
     const larguraDia=eventoDias.length ? ((100-somaFixas)/eventoDias.length).toFixed(2)+'%' : '3%';
@@ -3139,88 +3107,64 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       ${depoisDosDias.map(w=>`<col style="width:${w}">`).join('')}
     </colgroup>`;
   })();
-  /* Fonte de referência 11px; eventos com muitos dias reduzem
-     moderadamente em vez de cortar/quebrar qualquer informação — o
-     navegador ainda permite diminuir a escala de impressão livremente
-     por cima disso. */
+
   const fontePx=Math.max(9, Math.min(11, 11 - Math.max(0, eventoDias.length-8)*0.25)).toFixed(1);
-  const gerarTabela=(lista, titulo, funcaoAgrupamento, conteudoExtra)=>{
-    const grupos=(funcaoAgrupamento||agruparPorFuncaoPrincipal)(lista, f=>f.funcao, f=>f.nome);
-    const totalGrupo=(itens)=>itens.reduce((s,f)=>s+(f.total_receber||0),0);
+
+  const gerarTabelaFuncao=(grupo)=>{
+    const lista=grupo.itens;
+    const subtotal=lista.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
+    const linhas=lista.map(f=>`
+      <tr>
+        <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}</td>
+        <td class="col-func-presidencia">${funcaoParaImpressaoHTML(f.funcao)}</td>
+        ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
+        ${eventoDias.map(d=>{
+          const pr=presencaDoDia(f.participacao_id, d.id);
+          if(!pr || !pr.entrada_ts) return `<td class="col-dia">-</td>`;
+          const he=horasExtraDe(pr);
+          return `<td class="col-dia">${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
+        }).join('')}
+        <td>${f.dias_trabalhados}</td>
+        <td>${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
+        <td>${valorOuTraco(f.valor_excedente)}</td>
+        <td>${valorOuTraco(f.desconto)}</td>
+        <td>${brl(f.total_receber)}</td>
+        ${mostrarAssinaturaData?'<td class="col-assinatura"></td><td class="col-data-manual"></td>':''}
+      </tr>`).join('');
+
     return `
-    <div class="folha-fechamento">
-    ${titulo?`<div class="card-title" style="margin-bottom:6px;">${escapeHtml(titulo)}</div>`:''}
-    <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
-      ${colgroup}
-      <thead>
-        ${cabecalhoRepetido()}
-        <tr>
-          <th class="col-nome">NOME</th>
-          <th class="col-func-presidencia">FUNÇÃO</th>
-          ${mostrarCpf?'<th>CPF</th>':''}
-          ${eventoDias.map(d=>`<th class="col-dia">${formatDiaSomente(d.data)}</th>`).join('')}
-          <th>DIAS</th>
-          <th>VALOR</th>
-          <th>ADIC.</th><th>DESC.</th><th>TOTAL</th>
-          ${mostrarAssinaturaData?'<th class="col-assinatura">ASSINATURA</th><th class="col-data-manual">DATA</th>':''}
-        </tr>
-      </thead>
-      <tbody>
-        ${linhasComTituloDeGrupo(grupos, colspanDatas, (f)=>`
-          <tr>
-            <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}</td>
-            <td class="col-func-presidencia">${funcaoParaImpressaoHTML(f.funcao)}</td>
-            ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
-            ${eventoDias.map(d=>{
-              const pr=presencaDoDia(f.participacao_id, d.id);
-              if(!pr || !pr.entrada_ts) return `<td class="col-dia">-</td>`;
-              const he=horasExtraDe(pr);
-              return `<td class="col-dia">${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
-            }).join('')}
-            <td>${f.dias_trabalhados}</td>
-            <td>${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
-            <td>${valorOuTraco(f.valor_excedente)}</td>
-            <td>${valorOuTraco(f.desconto)}</td>
-            <td>${brl(f.total_receber)}</td>
-            ${mostrarAssinaturaData?'<td class="col-assinatura"></td><td class="col-data-manual"></td>':''}
-          </tr>`, totalGrupo)}
-      </tbody>
-    </table>
-    ${conteudoExtra||''}
-    </div>`;
-  };
-  if(listagemUnica){
-    /* Fechamento Evento Presidência: uma única listagem sequencial,
-       sem separar Vigilantes das demais funções. Aqui (só aqui) o
-       líder forma um grupo PRÓPRIO, logo abaixo da função principal —
-       agruparPorFuncaoExataOrdenada() cuida disso; a ordem das
-       funções continua a oficial do sistema. Sem quebra de página
-       forçada entre grupos — é uma única <table>.
-       IMPORTANTE: o resumo final (.totals) é passado como
-       conteudoExtra para ficar DENTRO do mesmo .folha-fechamento que
-       envolve a tabela — não como elemento irmão depois dela. Isso é
-       o que impede a quebra de página forçada entre a listagem e o
-       resumo: a regra de impressão .folha-fechamento{page-break-after:
-       always} só quebra DEPOIS de todo o bloco (tabela+resumo juntos),
-       nunca entre os dois. Antes, .totals ficava como irmão fora da
-       .folha-fechamento, o que tirava dela a condição de :last-child
-       e reativava a quebra forçada logo após a tabela — exatamente
-       onde não devia. */
-    const totalGeral=fechamentoDados.reduce((s,f)=>s+(f.total_receber||0),0);
-    const resumoFinal=`
-      <div class="totals" style="margin-top:10px; page-break-inside:avoid;">
-        <div class="item"><div class="label">Total de colaboradores</div><div class="value" style="font-size:16px;">${fechamentoDados.length}</div></div>
-        <div class="item"><div class="label">Total a pagar no evento</div><div class="value">${brl(totalGeral)}</div></div>
+      <div class="folha-fechamento bloco-funcao-fechamento" style="page-break-inside:avoid;">
+        <div class="card-title" style="margin-bottom:6px;">${escapeHtml(grupo.funcao)}</div>
+        <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
+          ${colgroup}
+          <thead>
+            ${cabecalhoRepetido()}
+            <tr>
+              <th class="col-nome">NOME</th>
+              <th class="col-func-presidencia">FUNÇÃO</th>
+              ${mostrarCpf?'<th>CPF</th>':''}
+              ${eventoDias.map(d=>`<th class="col-dia">${formatDiaSomente(d.data)}</th>`).join('')}
+              <th>DIAS</th>
+              <th>VALOR</th>
+              <th>ADIC.</th><th>DESC.</th><th>TOTAL</th>
+              ${mostrarAssinaturaData?'<th class="col-assinatura">ASSINATURA</th><th class="col-data-manual">DATA</th>':''}
+            </tr>
+          </thead>
+          <tbody>${linhas}</tbody>
+        </table>
+        <div class="subtotal-funcao-fechamento" style="display:flex; justify-content:flex-end; margin-top:8px; padding:7px 10px; border-top:1px solid #ccc; font-weight:700; page-break-inside:avoid;">
+          Subtotal ${escapeHtml(grupo.funcao)}: <span style="margin-left:8px;">${brl(subtotal)}</span>
+        </div>
       </div>`;
-    return `
-      <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrint">Imprimir / Exportar PDF</button></div>
-      ${gerarTabela(fechamentoDados, null, agruparPorFuncaoExataOrdenada, resumoFinal)}
-    `;
-  }
+  };
+
+  const totalGeral=fechamentoDados.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
   return `
-    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="${mostrarCpf?'btnPrintFechamentoEvento':'btnPrint'}">Imprimir / Exportar PDF</button></div>
-    ${vigilantes.length ? gerarTabela(vigilantes,'VIGILANTES') : ''}
-    ${demais.length ? gerarTabela(demais,'GRUPO ANJOS DA PAZ') : ''}
+    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button></div>
+    ${grupos.map(gerarTabelaFuncao).join('')}
+    <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid;">
+      TOTAL GERAL DO EVENTO: <span style="margin-left:10px;">${brl(totalGeral)}</span>
+    </div>
   `;
 }
 function attachFechamentoHandlers(){
@@ -4996,20 +4940,6 @@ function attachDetailHandlers(){
   if(btnPrint) btnPrint.onclick=()=>window.print();
   const btnPrintFechamentoEvento=document.getElementById('btnPrintFechamentoEvento');
   if(btnPrintFechamentoEvento) btnPrintFechamentoEvento.onclick=()=>window.print();
-  const btnVisaoFechamentoGestor=document.getElementById('btnVisaoFechamentoGestor');
-  if(btnVisaoFechamentoGestor) btnVisaoFechamentoGestor.onclick=()=>{
-    /* Guarda também no JS (não só o atributo disabled do HTML) — o
-       bloqueio não pode ser contornado nem se o disabled falhar por
-       algum motivo. */
-    const ev=currentEvent();
-    if(!ev || ev.status==='aberto'){
-      showToast('Aprove e encerre o Fechamento Evento Presidência antes de liberar a impressão do Fechamento do Gestor.');
-      return;
-    }
-    aprovacaoVisao='gestor'; renderShell();
-  };
-  const btnVisaoFechamentoPresidencia=document.getElementById('btnVisaoFechamentoPresidencia');
-  if(btnVisaoFechamentoPresidencia) btnVisaoFechamentoPresidencia.onclick=()=>{ aprovacaoVisao='presidencia'; renderShell(); };
   const btnAprovar=document.getElementById('btnAprovar');
   if(btnAprovar) btnAprovar.onclick=async ()=>{
     if(!confirm('Confirma o fechamento da equipe? Após aprovar, o evento fica disponível na área de Pagamentos.')) return;
