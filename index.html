@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 07:15';
+const APP_VERSION = '27/08/2026 07:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3588,7 +3588,7 @@ function attachBancoColaboradoresHandlers(){
     t.onclick=()=>{ colaboradoresSubaba=t.dataset.subaba; renderShell(); };
   });
   const btnNovo=document.getElementById('btnNovoColaboradorBanco');
-  if(btnNovo) btnNovo.onclick=()=>abrirFormularioColaboradorBanco(null);
+  if(btnNovo) btnNovo.onclick=()=>abrirFormularioColaboradorBanco(null, colaboradoresSubaba==='brigadistas');
   attachColaboradoresBancoListaHandlers();
 }
 /* Edição reativada nesta rodada (antes desabilitada por pedido de uma
@@ -3609,8 +3609,16 @@ function attachColaboradoresBancoListaHandlers(){
    novo). Depende da RPC 'upsert_colaborador_banco' (authenticated) —
    ver observação sobre Supabase no relatório desta rodada; ainda não
    criada no banco. */
-function abrirFormularioColaboradorBanco(existente){
+function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
   const ehEdicao=!!existente;
+  /* NOVO NESTA RODADA — quando o botão + Novo Colaborador é clicado
+     dentro da aba Brigadistas (forcarBrigadista=true, só se aplica a
+     cadastro novo, nunca a edição), o campo Função continua existindo
+     no DOM (reaproveita 100% a lógica de leitura/validação já
+     existente) mas fica oculto e pré-fixado em BRIGADISTA — o gestor
+     não vê nem escolhe função nesse caso. Na edição, ou quando aberto
+     fora da aba Brigadistas, o campo aparece exatamente como sempre. */
+  const esconderCampoFuncao = forcarBrigadista && !ehEdicao;
   const modalId='modalColaboradorBanco';
   const overlay=document.createElement('div');
   overlay.id=modalId;
@@ -3618,12 +3626,12 @@ function abrirFormularioColaboradorBanco(existente){
   overlay.innerHTML=`
     <div class="modal-box">
       <div class="card-title">${ehEdicao?'Editar colaborador':'Novo colaborador'}</div>
-      <div class="field"><label>Função</label>
+      <div class="field" id="fcbCampoFuncaoWrap" style="display:${esconderCampoFuncao?'none':''};"><label>Função</label>
         <select id="fcbFuncao" ${ehEdicao?'disabled':''}>
           <option value="">Selecione a função</option>
           <option value="VIGILANTE" ${existente&&existente.funcao==='VIGILANTE'?'selected':''}>VIGILANTE</option>
           <option value="VIGILANTE LÍDER DE EQUIPE" ${existente&&existente.funcao==='VIGILANTE LÍDER DE EQUIPE'?'selected':''}>VIGILANTE LÍDER DE EQUIPE</option>
-          <option value="BRIGADISTA" ${existente&&existente.funcao==='BRIGADISTA'?'selected':''}>BRIGADISTA</option>
+          <option value="BRIGADISTA" ${(existente&&existente.funcao==='BRIGADISTA')||esconderCampoFuncao?'selected':''}>BRIGADISTA</option>
           <option value="__outra__" ${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'selected':''}>Outra função</option>
         </select>
         <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
@@ -4087,7 +4095,6 @@ function abrirJanelaImpressaoCrachasBrigadista(selecionados){
         <div class="face-verso">
           <div class="verso-header">
             <div>VÁLIDO SOMENTE EM EVENTOS DO GRUPO ANJOS DA PAZ</div>
-            <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
             <div class="verso-cel"><b>IDENTIDADE:</b><span>${escapeHtml(formatIdentidadeMG(cad.identidade||''))}</span></div>
