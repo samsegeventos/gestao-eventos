@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 08:15';
+const APP_VERSION = '27/08/2026 08:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3395,7 +3395,7 @@ async function loadCpfsAutorizadosEvento(){
    Supabase no relatório desta rodada; ainda não criada no banco. */
 async function loadColaboradoresBanco(){
   if(!gestorUnlocked){ colaboradoresBanco=[]; return; }
-  const {data,error}=await sb.rpc('listar_colaboradores_banco',{});
+  const {data,error}=await sb.rpc('listar_colaboradores_banco_conferencia_v1',{});
   if(error){ console.error(error); colaboradoresBanco=[]; return; }
   colaboradoresBanco=data||[];
   /* NORMALIZAÇÃO PROFISSIONAL — registros antigos que foram gravados
@@ -3466,6 +3466,49 @@ function colaboradorNaSubaba(c, subaba){
 function buscarColaboradorPorCpf(cpf){
   const norm=String(cpf||'').replace(/\D/g,'');
   return colaboradoresBanco.find(c=>String(c.cpf||'').replace(/\D/g,'')===norm) || null;
+}
+
+/* Confirma no backend a data de reciclagem atualmente cadastrada.
+   A data nunca é alterada por esta ação; somente o status de conferência
+   e os dados de auditoria são registrados pela RPC. */
+async function confirmarConferenciaReciclagem(cpf){
+  const colab=buscarColaboradorPorCpf(cpf);
+  if(!colab || !colab.reciclagem){
+    showToast('Não há data de reciclagem cadastrada para confirmar.');
+    return;
+  }
+  if(colab.reciclagem_conferida===true){
+    showToast('Esta data já está conferida.');
+    return;
+  }
+  const confirmar=window.confirm(
+    `Confirmar a conferência da validade da reciclagem?\n\n`+
+    `Colaborador: ${nomeExibicao(colab.nome)}\n`+
+    `Validade: ${formatDate(colab.reciclagem)}\n\n`+
+    `Esta confirmação significa que a data atualmente cadastrada foi conferida pelo gestor com a informação oficial da Polícia Federal.`
+  );
+  if(!confirmar) return;
+
+  const btn=document.querySelector(`.btn-confirmar-reciclagem[data-cpf="${String(cpf||'').replace(/\D/g,'')}"]`);
+  if(btn){ btn.disabled=true; btn.textContent='Confirmando...'; }
+
+  const r=await chamarRpcGestor(
+    'confirmar_conferencia_reciclagem_v1',
+    {p_cpf:String(cpf||'').replace(/\D/g,'')}
+  );
+
+  if(!r.ok){
+    if(btn){ btn.disabled=false; btn.textContent='✓ Confirmar conferência'; }
+    return;
+  }
+
+  showToast('Validade da reciclagem marcada como conferida.');
+  await loadColaboradoresBanco();
+  const lista=document.getElementById('colaboradoresBancoLista');
+  if(lista){
+    lista.innerHTML=renderListaColaboradoresBanco();
+    attachColaboradoresBancoListaHandlers();
+  }
 }
 function filtrarColaboradoresBanco(lista){
   /* CORREÇÃO DESTA RODADA — antes só considerava nome/CPF (com OU
@@ -3644,7 +3687,18 @@ function renderListaColaboradoresBanco(){
             <td>${escapeHtml(nomeExibicao(c.nome))}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
             <td>${escapeHtml(c.identidade||'—')}</td>
-            <td class="mono"><span style="color:${CORES_RECICLAGEM[status.cor]}; font-weight:600;" title="${escapeHtml(status.rotulo)}">${c.reciclagem?formatDate(c.reciclagem):'—'}${c.reciclagem?` · ${escapeHtml(status.rotulo)}`:''}</span></td>
+            <td class="mono">
+  ${c.reciclagem ? `
+    <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+      <span style="color:${CORES_RECICLAGEM[status.cor]}; font-weight:600;" title="${escapeHtml(status.rotulo)}">${formatDate(c.reciclagem)} · ${escapeHtml(status.rotulo)}</span>
+      ${c.reciclagem_conferida===true
+        ? `<span style="color:var(--teal); font-weight:700; font-size:11px;" title="Data atualmente cadastrada conferida pelo gestor.">✅ CONFERIDA</span>`
+        : `<span style="color:var(--amber); font-weight:700; font-size:11px;" title="Data informada/alterada e ainda não conferida pelo gestor.">⚠️ NÃO CONFERIDA</span>
+           <button class="btn btn-teal btn-sm btn-confirmar-reciclagem" data-cpf="${escapeHtml(c.cpf)}" style="padding:4px 7px; font-size:11px;">✓ Confirmar conferência</button>`
+      }
+    </div>
+  ` : `<span style="color:${CORES_RECICLAGEM.cinza};">— Sem data cadastrada</span>`}
+</td>
             <td>${escapeHtml(c.cidade||'—')}</td>
             <td>${c.grandes_eventos===true?'Sim':(c.grandes_eventos===false?'Não':'—')}</td>
             <td>${escapeHtml(c.numero_dpf||'—')}</td>
@@ -3691,6 +3745,9 @@ function attachColaboradoresBancoListaHandlers(){
       const cpf=btn.closest('tr').dataset.cpf;
       abrirFormularioColaboradorBanco(buscarColaboradorPorCpf(cpf));
     };
+  });
+  document.querySelectorAll('.btn-confirmar-reciclagem').forEach(btn=>{
+    btn.onclick=()=>confirmarConferenciaReciclagem(btn.dataset.cpf);
   });
 }
 /* ================= NOVO/EDITAR COLABORADOR (gestor) =================
@@ -3739,6 +3796,13 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
       <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="UF-N.NNN.NNN" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
       <div class="field" id="fcbCampoReciclagemWrap"><label id="fcbLabelReciclagem">Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
+       <div id="fcbStatusConferenciaReciclagem" style="display:${(ehEdicao && ehFuncaoVigilante(normalizaFuncaoDisplay(existente&&existente.funcao||'')))?'block':'none'}; margin-top:-7px; margin-bottom:10px; font-size:12px;">
+         ${ehEdicao && ehFuncaoVigilante(normalizaFuncaoDisplay(existente&&existente.funcao||'')) && existente&&existente.reciclagem
+           ? (existente.reciclagem_conferida===true
+             ? '<span style="color:var(--teal);font-weight:700;">✅ CONFERIDA</span> <span style="color:var(--muted);">Data atualmente cadastrada conferida pelo gestor.</span>'
+             : '<span style="color:var(--amber);font-weight:700;">⚠️ NÃO CONFERIDA</span> <span style="color:var(--muted);">Data informada/alterada e ainda não conferida pelo gestor.</span>')
+           : ''}
+       </div>
       <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
       <div id="fcbCamposVigilante">
         <div class="field"><label>Grandes eventos</label>
