@@ -284,7 +284,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 07:30';
+const APP_VERSION = '27/08/2026 07:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -675,6 +675,7 @@ let colaboradoresBuscaNome = '';
 let colaboradoresBuscaCpf = '';
 let colaboradoresBuscaTelefone = '';
 let colaboradoresBuscaCidade = '';
+let colaboradoresBuscaCidadeDropdown = ''; // NOVO — filtro de cidade em lista suspensa, no topo, combinado (E) com os demais filtros já existentes, inclusive o campo de texto livre acima
 let colaboradoresBuscaGrandesEventos = ''; // '' | 'sim' | 'nao'
 let colaboradoresBuscaSituacaoReciclagem = ''; // '' | 'vermelho' | 'amarelo' | 'verde'
 let colaboradoresSubaba = 'vigilantes'; // 'vigilantes' | 'brigadistas' | 'demais'
@@ -3381,6 +3382,28 @@ async function loadColaboradoresBanco(){
   const {data,error}=await sb.rpc('listar_colaboradores_banco',{});
   if(error){ console.error(error); colaboradoresBanco=[]; return; }
   colaboradoresBanco=data||[];
+  /* CORREÇÃO CRÍTICA (2ª rodada, ajustada conforme diagnóstico
+     confirmado) — a classificação por histórico de participações
+     (abaixo) sozinha deixava colaboradores recém-cadastrados pelo
+     Banco (que ainda nunca participaram de nenhum evento) presos em
+     "Demais Funções", mesmo com colaboradores.funcao já preenchida
+     como VIGILANTE/BRIGADISTA — dando a falsa impressão de que o
+     cadastro "não salvou". A classificação agora combina as duas
+     fontes com OU: histórico de participações (para quem já
+     trabalhou, mesmo com funcao=NULL) OU a função cadastrada agora
+     (para quem acabou de ser cadastrado e ainda não participou de
+     nada). AJUSTE desta rodada: teste por PREFIXO ("começa com
+     VIGILANTE"/"começa com BRIGADISTA"), não mais igualdade exata —
+     mesma regra já usada por listar_categorias_colaboradores (LIKE
+     'VIGILANTE%'/'BRIGADISTA%'), agora aplicada de forma consistente
+     também para colaboradores.funcao. Cobre "VIGILANTE NOTURNO",
+     "VIGILANTE PATRIMONIAL", "BRIGADISTA LÍDER DE EQUIPE" etc., não só
+     as duas variações fixas de antes. */
+  colaboradoresBanco.forEach(c=>{
+    const funcaoNorm=normalizaFuncaoDisplay(c.funcao);
+    c._ehVigilantePorFuncao = funcaoNorm.startsWith('VIGILANTE');
+    c._ehBrigadistaPorFuncao = funcaoNorm.startsWith('BRIGADISTA');
+  });
   /* Classificação nas subabas passou a ser baseada no HISTÓRICO REAL
      de participações (public.participacoes), não mais em
      colaboradores.funcao — porque confirmamos que várias pessoas têm
@@ -3397,12 +3420,12 @@ async function loadColaboradoresBanco(){
     (categorias||[]).forEach(cat=>{ porCpf[String(cat.cpf||'').replace(/\D/g,'')]=cat; });
     colaboradoresBanco.forEach(c=>{
       const cat=porCpf[String(c.cpf||'').replace(/\D/g,'')];
-      c._ehVigilante=!!(cat && cat.eh_vigilante);
-      c._ehBrigadista=!!(cat && cat.eh_brigadista);
+      c._ehVigilante=!!(cat && cat.eh_vigilante) || c._ehVigilantePorFuncao;
+      c._ehBrigadista=!!(cat && cat.eh_brigadista) || c._ehBrigadistaPorFuncao;
     });
   }catch(errCat){
     console.error('Falha ao consultar histórico de participações para classificação:', errCat);
-    colaboradoresBanco.forEach(c=>{ c._ehVigilante=false; c._ehBrigadista=false; });
+    colaboradoresBanco.forEach(c=>{ c._ehVigilante=c._ehVigilantePorFuncao; c._ehBrigadista=c._ehBrigadistaPorFuncao; });
   }
 }
 /* Um mesmo CPF pode pertencer a mais de uma subaba (ex: já trabalhou
@@ -3426,7 +3449,12 @@ function filtrarColaboradoresBanco(lista){
      tinham handlers corretos, mas eram ignorados aqui. Agora os 6
      filtros existentes são combinados com E: cada filtro preenchido
      restringe mais a lista. Nenhum filtro preenchido = lista
-     completa (limpar filtros restaura tudo). */
+     completa (limpar filtros restaura tudo). NOVO NESTA RODADA:
+     filtro de cidade em lista suspensa (comparação exata, já que vem
+     de uma lista de valores já existentes no banco) — combinado com
+     E junto de todos os demais, inclusive o filtro de cidade em
+     texto livre já existente (os dois podem estar preenchidos ao
+     mesmo tempo, cada um restringindo mais a lista). */
   const buscaTexto=colaboradoresBuscaNome.trim().toLowerCase();
   const buscaCpfDigits=colaboradoresBuscaCpf.replace(/\D/g,'');
   const buscaTelDigits=colaboradoresBuscaTelefone.replace(/\D/g,'');
@@ -3436,6 +3464,7 @@ function filtrarColaboradoresBanco(lista){
     if(buscaCpfDigits && !String(c.cpf||'').replace(/\D/g,'').includes(buscaCpfDigits)) return false;
     if(buscaTelDigits && !String(c.telefone||'').replace(/\D/g,'').includes(buscaTelDigits)) return false;
     if(buscaCidade && !(c.cidade||'').toLowerCase().includes(buscaCidade)) return false;
+    if(colaboradoresBuscaCidadeDropdown && (c.cidade||'').trim()!==colaboradoresBuscaCidadeDropdown) return false;
     if(colaboradoresBuscaGrandesEventos==='sim' && c.grandes_eventos!==true) return false;
     if(colaboradoresBuscaGrandesEventos==='nao' && c.grandes_eventos!==false) return false;
     if(colaboradoresBuscaSituacaoReciclagem && corStatusReciclagem(c.reciclagem).cor!==colaboradoresBuscaSituacaoReciclagem) return false;
@@ -3454,10 +3483,28 @@ function renderBancoColaboradores(main){
     if(colaboradorNaSubaba(c,'brigadistas')) contagens.brigadistas++;
     if(colaboradorNaSubaba(c,'demais')) contagens.demais++;
   });
+  /* NOVO NESTA RODADA — filtro de Cidade em lista suspensa, no topo,
+     junto do filtro de texto livre já existente (preservado). Lista
+     as cidades cadastradas em TODO o Banco (não só da subaba ativa),
+     sem normalização destrutiva: o texto vem exatamente como está
+     gravado no banco, só remove duplicatas EXATAS (mesma grafia) e
+     ordena alfabeticamente. Se houver "Belo Horizonte" e
+     "belo horizonte" cadastrados como textos diferentes, aparecem
+     como 2 opções distintas — decisão deliberada, para não decidir
+     por conta própria qual é a grafia "certa". */
+  const cidadesUnicas=[...new Set(colaboradoresBanco.map(c=>(c.cidade||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
   main.innerHTML=`
     <div class="card-title">Banco de Colaboradores</div>
     <div class="card-sub">Cadastro central e permanente — um único registro por CPF, reaproveitado em todos os eventos em que a pessoa trabalhar. Também alimentado automaticamente pelos links públicos dos eventos.</div>
     <div class="panel">
+      <div class="add-row" style="align-items:center; flex-wrap:wrap;">
+        <div class="field"><label>Filtrar por cidade (lista)</label>
+          <select id="buscaColaboradorCidadeDropdown">
+            <option value="" ${colaboradoresBuscaCidadeDropdown===''?'selected':''}>Todas as cidades</option>
+            ${cidadesUnicas.map(cid=>`<option value="${escapeHtml(cid)}" ${colaboradoresBuscaCidadeDropdown===cid?'selected':''}>${escapeHtml(cid)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
       <div class="add-row" style="align-items:center; flex-wrap:wrap;">
         <div class="field"><label>Buscar por nome</label><input type="text" id="buscaColaboradorNome" placeholder="Nome" value="${escapeHtml(colaboradoresBuscaNome)}"></div>
         <div class="field"><label>Buscar por CPF</label><input type="text" id="buscaColaboradorCpf" placeholder="000.000.000-00" maxlength="14" value="${escapeHtml(colaboradoresBuscaCpf)}"></div>
@@ -3496,31 +3543,29 @@ function renderListaColaboradoresBanco(){
   const daSubaba=colaboradoresBanco.filter(c=>colaboradorNaSubaba(c,colaboradoresSubaba));
   const lista=filtrarColaboradoresBanco(daSubaba);
   if(!lista.length){
-    const buscaAtiva=colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim()||colaboradoresBuscaTelefone.trim()||colaboradoresBuscaCidade.trim()||colaboradoresBuscaGrandesEventos||colaboradoresBuscaSituacaoReciclagem;
+    const buscaAtiva=colaboradoresBuscaNome.trim()||colaboradoresBuscaCpf.trim()||colaboradoresBuscaTelefone.trim()||colaboradoresBuscaCidade.trim()||colaboradoresBuscaGrandesEventos||colaboradoresBuscaSituacaoReciclagem||colaboradoresBuscaCidadeDropdown;
     return `<div class="empty"><b>${buscaAtiva?'Nenhum resultado para essa busca':'Nenhum colaborador nesta categoria ainda'}</b>${buscaAtiva?'':'Cadastre manualmente ou aguarde o preenchimento pelo link do evento.'}</div>`;
   }
   const nomesOrdenados=[...lista].sort((a,b)=>(a.nome||'').localeCompare(b.nome||'','pt-BR'));
   const CORES_RECICLAGEM={vermelho:'var(--red)', amarelo:'var(--amber)', verde:'var(--teal)', cinza:'var(--muted)'};
 
-  /* NOVO NESTA RODADA — a subaba "brigadistas" já existia e já filtra
-     só colaboradores com _ehBrigadista=true (colaboradorNaSubaba),
-     então aqui dentro TODOS os itens da lista já são Brigadistas.
-     Por isso a ramificação é por subaba, não célula a célula: quando
-     a subaba ativa é "brigadistas", a coluna Grandes Eventos some e
-     a coluna Nº DPF vira Nº Registro Brigadista, usando
-     numero_registro_brigadista (nunca numero_dpf). A subaba de
-     Vigilantes (e "outras") continua com a tabela original, intacta,
-     usando numero_dpf normalmente — confirmado por diff. */
+  /* NOVO NESTA RODADA — coluna FUNÇÃO adicionada logo antes de NOME
+     nas 3 tabelas (mostra a função real cadastrada, nunca um texto
+     genérico). Também nesta rodada: bloco próprio de "Demais Funções"
+     (antes misturado com o de Vigilante) — colunas FUNÇÃO, NOME, CPF,
+     RG, CIDADE, TELEFONE, sem GE/DPF/reciclagem/registro, já que
+     nenhum desses se aplica a quem não é Vigilante nem Brigadista. */
   if(colaboradoresSubaba==='brigadistas'){
     return `
       <table>
-        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento do curso</th><th>Cidade</th><th>Nº Registro Brigadista</th><th>Telefone</th><th></th></tr></thead>
+        <thead><tr><th>#</th><th>Função</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento do curso</th><th>Cidade</th><th>Nº Registro Brigadista</th><th>Telefone</th><th></th></tr></thead>
         <tbody>
           ${nomesOrdenados.map((c,i)=>{
             const status=corStatusReciclagem(c.reciclagem);
             return `
             <tr data-cpf="${c.cpf}">
               <td class="mono">${i+1}</td>
+              <td>${escapeHtml(c.funcao||'BRIGADISTA')}</td>
               <td>${escapeHtml(nomeExibicao(c.nome))}</td>
               <td class="mono">${formatCpf(c.cpf)}</td>
               <td>${escapeHtml(c.identidade||'—')}</td>
@@ -3536,22 +3581,42 @@ function renderListaColaboradoresBanco(){
     `;
   }
 
-  /* Ordem de colunas (Vigilantes/outras, INTOCADA): Nome, CPF, RG,
-     Data de Vencimento da Reciclagem/Curso (com cor de status),
-     Cidade, Grandes Eventos, Nº DPF, Telefone — sem a coluna Função
-     (continua armazenada e usada para a classificação acima, só não
-     ocupa coluna aqui). "Data do curso" não aparece mais —
-     data_curso continua intacta no banco, só deixou de ser
+  if(colaboradoresSubaba==='demais'){
+    return `
+      <table>
+        <thead><tr><th>#</th><th>Função</th><th>Nome</th><th>CPF</th><th>RG</th><th>Cidade</th><th>Telefone</th><th></th></tr></thead>
+        <tbody>
+          ${nomesOrdenados.map((c,i)=>`
+            <tr data-cpf="${c.cpf}">
+              <td class="mono">${i+1}</td>
+              <td>${escapeHtml(c.funcao||'—')}</td>
+              <td>${escapeHtml(nomeExibicao(c.nome))}</td>
+              <td class="mono">${formatCpf(c.cpf)}</td>
+              <td>${escapeHtml(c.identidade||'—')}</td>
+              <td>${escapeHtml(c.cidade||'—')}</td>
+              <td class="mono">${c.telefone?formatTelefone(c.telefone):'—'}</td>
+              <td><button class="btn btn-ghost btn-sm btn-editar-colaborador-banco">Editar</button></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    `;
+  }
+
+  /* Ordem de colunas (Vigilantes): Função, Nome, CPF, RG, Data de
+     Vencimento da Reciclagem/Curso (com cor de status), Cidade,
+     Grandes Eventos, Nº DPF, Telefone. "Data do curso" não aparece
+     mais — data_curso continua intacta no banco, só deixou de ser
      coletada/exibida. */
   return `
     <table>
-      <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento da reciclagem/curso</th><th>Cidade</th><th>Grandes eventos</th><th>Nº DPF</th><th>Telefone</th><th></th></tr></thead>
+      <thead><tr><th>#</th><th>Função</th><th>Nome</th><th>CPF</th><th>RG</th><th>Data de vencimento da reciclagem/curso</th><th>Cidade</th><th>Grandes eventos</th><th>Nº DPF</th><th>Telefone</th><th></th></tr></thead>
       <tbody>
         ${nomesOrdenados.map((c,i)=>{
           const status=corStatusReciclagem(c.reciclagem);
           return `
           <tr data-cpf="${c.cpf}">
             <td class="mono">${i+1}</td>
+            <td>${escapeHtml(c.funcao||'—')}</td>
             <td>${escapeHtml(nomeExibicao(c.nome))}</td>
             <td class="mono">${formatCpf(c.cpf)}</td>
             <td>${escapeHtml(c.identidade||'—')}</td>
@@ -3572,6 +3637,7 @@ function attachBancoColaboradoresHandlers(){
   const inpCpf=document.getElementById('buscaColaboradorCpf');
   const inpTelefone=document.getElementById('buscaColaboradorTelefone');
   const inpCidade=document.getElementById('buscaColaboradorCidade');
+  const selCidadeDropdown=document.getElementById('buscaColaboradorCidadeDropdown');
   const selGrandesEventos=document.getElementById('buscaColaboradorGrandesEventos');
   const selSituacaoReciclagem=document.getElementById('buscaColaboradorSituacaoReciclagem');
   const atualizarLista=()=>{
@@ -3582,13 +3648,14 @@ function attachBancoColaboradoresHandlers(){
   if(inpCpf) inpCpf.oninput=(e)=>{ maskCpfInput(e.target); colaboradoresBuscaCpf=inpCpf.value; atualizarLista(); };
   if(inpTelefone) inpTelefone.oninput=(e)=>{ maskTelefoneInput(e.target); colaboradoresBuscaTelefone=inpTelefone.value; atualizarLista(); };
   if(inpCidade) inpCidade.oninput=()=>{ colaboradoresBuscaCidade=inpCidade.value; atualizarLista(); };
+  if(selCidadeDropdown) selCidadeDropdown.onchange=()=>{ colaboradoresBuscaCidadeDropdown=selCidadeDropdown.value; atualizarLista(); };
   if(selGrandesEventos) selGrandesEventos.onchange=()=>{ colaboradoresBuscaGrandesEventos=selGrandesEventos.value; atualizarLista(); };
   if(selSituacaoReciclagem) selSituacaoReciclagem.onchange=()=>{ colaboradoresBuscaSituacaoReciclagem=selSituacaoReciclagem.value; atualizarLista(); };
   document.querySelectorAll('.subtab[data-subaba]').forEach(t=>{
     t.onclick=()=>{ colaboradoresSubaba=t.dataset.subaba; renderShell(); };
   });
   const btnNovo=document.getElementById('btnNovoColaboradorBanco');
-  if(btnNovo) btnNovo.onclick=()=>abrirFormularioColaboradorBanco(null, colaboradoresSubaba==='brigadistas');
+  if(btnNovo) btnNovo.onclick=()=>abrirFormularioColaboradorBanco(null, colaboradoresSubaba==='brigadistas', colaboradoresSubaba==='demais');
   attachColaboradoresBancoListaHandlers();
 }
 /* Edição reativada nesta rodada (antes desabilitada por pedido de uma
@@ -3609,7 +3676,7 @@ function attachColaboradoresBancoListaHandlers(){
    novo). Depende da RPC 'upsert_colaborador_banco' (authenticated) —
    ver observação sobre Supabase no relatório desta rodada; ainda não
    criada no banco. */
-function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
+function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDemais){
   const ehEdicao=!!existente;
   /* NOVO NESTA RODADA — quando o botão + Novo Colaborador é clicado
      dentro da aba Brigadistas (forcarBrigadista=true, só se aplica a
@@ -3617,8 +3684,14 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
      no DOM (reaproveita 100% a lógica de leitura/validação já
      existente) mas fica oculto e pré-fixado em BRIGADISTA — o gestor
      não vê nem escolhe função nesse caso. Na edição, ou quando aberto
-     fora da aba Brigadistas, o campo aparece exatamente como sempre. */
+     fora da aba Brigadistas, o campo aparece exatamente como sempre.
+     forcarDemais (NOVO): clicado dentro da aba Demais Funções — o
+     campo Função continua visível (diferente de Brigadista), mas já
+     vem pré-selecionado em "Outra função" com o texto livre pronto,
+     já que Demais Funções agrega várias funções distintas e o gestor
+     precisa poder digitar/trocar qual é. */
   const esconderCampoFuncao = forcarBrigadista && !ehEdicao;
+  const prefixarOutraFuncao = forcarDemais && !ehEdicao;
   const modalId='modalColaboradorBanco';
   const overlay=document.createElement('div');
   overlay.id=modalId;
@@ -3632,14 +3705,14 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
           <option value="VIGILANTE" ${existente&&existente.funcao==='VIGILANTE'?'selected':''}>VIGILANTE</option>
           <option value="VIGILANTE LÍDER DE EQUIPE" ${existente&&existente.funcao==='VIGILANTE LÍDER DE EQUIPE'?'selected':''}>VIGILANTE LÍDER DE EQUIPE</option>
           <option value="BRIGADISTA" ${(existente&&existente.funcao==='BRIGADISTA')||esconderCampoFuncao?'selected':''}>BRIGADISTA</option>
-          <option value="__outra__" ${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'selected':''}>Outra função</option>
+          <option value="__outra__" ${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'selected':''}>Outra função</option>
         </select>
-        <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao)?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
+        <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
       </div>
       <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
       <div class="field"><label>RG</label><input type="text" id="fcbIdentidade" placeholder="UF-N.NNN.NNN" value="${escapeHtml(existente?formatIdentidadeMG(existente.identidade||''):'')}"></div>
-      <div class="field"><label id="fcbLabelReciclagem">Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
+      <div class="field" id="fcbCampoReciclagemWrap"><label id="fcbLabelReciclagem">Data de vencimento da reciclagem/curso</label><input type="date" id="fcbReciclagem" value="${existente&&existente.reciclagem?existente.reciclagem:''}"></div>
       <div class="field"><label>Cidade</label><input type="text" id="fcbCidade" value="${escapeHtml(existente&&existente.cidade||'')}"></div>
       <div id="fcbCamposVigilante">
         <div class="field"><label>Grandes eventos</label>
@@ -3678,19 +3751,31 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
   const funcaoOutra=document.getElementById('fcbFuncaoOutra');
   const camposVigilante=document.getElementById('fcbCamposVigilante');
   const camposBrigadista=document.getElementById('fcbCamposBrigadista');
+  const campoReciclagemWrap=document.getElementById('fcbCampoReciclagemWrap');
   const labelReciclagem=document.getElementById('fcbLabelReciclagem');
-  /* NOVO NESTA RODADA — alterna os campos exibidos conforme a função
-     selecionada. BRIGADISTA: some Grandes Eventos/Nº DPF, aparece Nº
-     Registro Brigadista, rótulo da data vira "Data de vencimento do
-     curso". Vigilante/outras: exatamente como já era antes —
-     Grandes Eventos e Nº DPF, rótulo original da data. */
+  /* 3 vias — Vigilante (prefixo VIGILANTE, cobre "VIGILANTE",
+     "VIGILANTE LÍDER DE EQUIPE", "VIGILANTE NOTURNO" etc.): mostra
+     Grandes Eventos/DPF/reciclagem, rótulo original da data.
+     Brigadista (prefixo BRIGADISTA): mostra Nº Registro Brigadista e
+     reciclagem, rótulo "Data de vencimento do curso". Demais Funções
+     (nem um nem outro, inclusive "Outra função" com texto livre que
+     não comece com nenhum dos dois prefixos): esconde Grandes
+     Eventos/DPF/Nº Registro Brigadista E também a Data de Vencimento
+     — só Nome/CPF/RG/Cidade/Telefone. Mesma regra de prefixo usada
+     na classificação das abas (loadColaboradoresBanco), para nunca
+     discordar de onde o colaborador vai aparecer depois de salvo. */
   const atualizarCamposPorFuncao=()=>{
-    const ehBrig = funcaoSel.value==='BRIGADISTA';
-    camposVigilante.style.display = ehBrig ? 'none' : '';
+    const funcaoAtual = funcaoSel.value==='__outra__' ? funcaoOutra.value.trim() : funcaoSel.value;
+    const funcaoAtualNorm = normalizaFuncaoDisplay(funcaoAtual);
+    const ehVig = funcaoAtualNorm.startsWith('VIGILANTE');
+    const ehBrig = funcaoAtualNorm.startsWith('BRIGADISTA');
+    camposVigilante.style.display = ehVig ? '' : 'none';
     camposBrigadista.style.display = ehBrig ? '' : 'none';
+    campoReciclagemWrap.style.display = (ehVig||ehBrig) ? '' : 'none';
     labelReciclagem.textContent = ehBrig ? 'Data de vencimento do curso' : 'Data de vencimento da reciclagem/curso';
   };
   funcaoSel.onchange=()=>{ funcaoOutra.style.display = funcaoSel.value==='__outra__' ? 'block' : 'none'; atualizarCamposPorFuncao(); };
+  funcaoOutra.oninput=atualizarCamposPorFuncao; // texto livre de "Outra função" também decide os campos (ex.: digitar "Vigilante" manualmente)
   atualizarCamposPorFuncao(); // aplica o estado inicial certo já na abertura (novo cadastro ou edição)
 
   document.getElementById('fcbCancelar').onclick=()=>overlay.remove();
@@ -3705,20 +3790,30 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
     const reciclagem=document.getElementById('fcbReciclagem').value;
     const numeroDpf=formatNumeroDpfMG(dpfEl.value);
     const cidade=document.getElementById('fcbCidade').value.trim();
-    const ehBrig = funcao==='BRIGADISTA';
-    const grandesEventosValor = ehBrig ? '' : document.getElementById('fcbGrandesEventos').value;
+    /* AJUSTE DESTA RODADA — mesma regra de prefixo usada na
+       classificação das abas (startsWith, não igualdade exata), para
+       o formulário nunca discordar de onde o colaborador vai
+       aparecer depois de salvo (ex.: "VIGILANTE NOTURNO" digitado em
+       "Outra função" agora é reconhecido como Vigilante aqui também,
+       não só na listagem). */
+    const funcaoNormSalvar=normalizaFuncaoDisplay(funcao);
+    const ehVig = funcaoNormSalvar.startsWith('VIGILANTE');
+    const ehBrig = funcaoNormSalvar.startsWith('BRIGADISTA');
+    const ehDemais = !ehVig && !ehBrig;
+    const grandesEventosValor = ehVig ? document.getElementById('fcbGrandesEventos').value : '';
     const telefoneDigits=telEl.value.replace(/\D/g,'');
     const numeroRegistroBrigadista = ehBrig ? document.getElementById('fcbNumeroRegistroBrigadista').value.trim() : '';
 
     /* Campos obrigatórios do Novo Colaborador (também na edição) —
-       RG/Identidade RESTAURADO nesta rodada (voltou a ser
-       obrigatório). Validação client-side aqui; a mesma regra
-       também passa a existir na RPC (backend), para que não seja
-       possível contornar salvando por outro caminho. BRIGADISTA
-       (novo nesta rodada): não exige Grandes Eventos/DPF — exige Nº
-       Registro Brigadista no lugar, salvo na RPC administrativa
-       própria (upsert_colaborador_banco_brigadista_v1), sem tocar
-       em upsert_colaborador_banco (continua exclusiva de Vigilante). */
+       RG/Identidade sempre obrigatório nos 3 casos. Validação
+       client-side aqui; a mesma regra também passa a existir na RPC
+       (backend), para que não seja possível contornar salvando por
+       outro caminho. 3 VIAS NESTA RODADA: Vigilante (GE/DPF/data
+       obrigatórios, upsert_colaborador_banco); Brigadista (Nº Registro
+       Brigadista/data obrigatórios, upsert_colaborador_banco_brigadista_v1);
+       Demais Funções (NOVO — só Nome/CPF/RG/Cidade/Telefone, sem
+       data/GE/DPF/registro, upsert_colaborador_banco_demais_v1 —
+       nenhuma das duas RPCs existentes é tocada). */
     if(!funcao){ erroBox.textContent='Selecione a função.'; return; }
     if(!nome){ erroBox.textContent='Informe o nome completo.'; return; }
     if(cpfLimpo.length!==11){ erroBox.textContent='CPF INVÁLIDO. VERIFIQUE OS NÚMEROS INFORMADOS.'; return; }
@@ -3729,11 +3824,14 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
     if(!identidade){ erroBox.textContent='Informe o RG.'; return; }
     if(!identidadeValida(identidade)){ erroBox.textContent='RG EM FORMATO INVÁLIDO. USE UF-N.NNN.NNN.'; return; }
     if(!telefoneDigits){ erroBox.textContent='Informe o telefone.'; return; }
-    if(!reciclagem){ erroBox.textContent=ehBrig?'Informe a data de vencimento do curso.':'Informe a data de vencimento da reciclagem/curso.'; return; }
     if(!cidade){ erroBox.textContent='Informe a cidade.'; return; }
-    if(ehBrig){
+    if(ehDemais){
+      // Nome/CPF/RG/Cidade/Telefone já validados acima — nada mais exigido para Demais Funções
+    } else if(ehBrig){
+      if(!reciclagem){ erroBox.textContent='Informe a data de vencimento do curso.'; return; }
       if(!numeroRegistroBrigadista){ erroBox.textContent='Informe o Nº Registro Brigadista.'; return; }
     } else {
+      if(!reciclagem){ erroBox.textContent='Informe a data de vencimento da reciclagem/curso.'; return; }
       if(grandesEventosValor===''){ erroBox.textContent='Selecione se participa de grandes eventos.'; return; }
       if(!numeroDpf){ erroBox.textContent='Informe o Nº DPF.'; return; }
       if(contarDigitos(numeroDpf)<11){ erroBox.textContent='Nº DPF INCOMPLETO. PREENCHA TODOS OS NÚMEROS.'; return; }
@@ -3743,17 +3841,25 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista){
     const btnSalvar=document.getElementById('fcbSalvar');
     btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
     try{
-      const r = ehBrig
-        ? await chamarRpcGestor('upsert_colaborador_banco_brigadista_v1',{
-            p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits||null,
-            p_identidade:identidade||null, p_reciclagem:reciclagem||null,
-            p_numero_registro_brigadista:numeroRegistroBrigadista||null, p_cidade:cidade||null
-          })
-        : await chamarRpcGestor('upsert_colaborador_banco',{
-        p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
-        p_identidade:identidade||null, p_data_curso:null, p_reciclagem:reciclagem||null,
-        p_numero_dpf:numeroDpf||null, p_cidade:cidade||null, p_grandes_eventos:grandesEventos
-      });
+      let r;
+      if(ehBrig){
+        r = await chamarRpcGestor('upsert_colaborador_banco_brigadista_v1',{
+          p_cpf:cpfLimpo, p_nome:nome, p_telefone:telefoneDigits||null,
+          p_identidade:identidade||null, p_reciclagem:reciclagem||null,
+          p_numero_registro_brigadista:numeroRegistroBrigadista||null, p_cidade:cidade||null
+        });
+      } else if(ehDemais){
+        r = await chamarRpcGestor('upsert_colaborador_banco_demais_v1',{
+          p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
+          p_identidade:identidade||null, p_cidade:cidade||null
+        });
+      } else {
+        r = await chamarRpcGestor('upsert_colaborador_banco',{
+          p_cpf:cpfLimpo, p_nome:nome, p_funcao:funcao, p_telefone:telefoneDigits||null,
+          p_identidade:identidade||null, p_data_curso:null, p_reciclagem:reciclagem||null,
+          p_numero_dpf:numeroDpf||null, p_cidade:cidade||null, p_grandes_eventos:grandesEventos
+        });
+      }
       if(!r.ok) throw r.error;
       showToast('Dados atualizados com sucesso.');
       overlay.remove();
