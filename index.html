@@ -985,7 +985,7 @@ function renderPublic(alreadySent){
          decidir quais campos de crachá ainda faltam — nunca pede de
          novo o que já está completo e válido. Para as demais funções,
          o formulário permanece exatamente como já era. */
-      const ehVigilante=baseDaFuncaoDisplay(normalizaFuncaoDisplay(registro.funcao))==='VIGILANTE';
+      const ehVigilante=ehFuncaoVigilante(registro.funcao);
       /* BRIGADISTA EVENTUAL — fluxo NOVO, completamente isolado do
          Vigilante: bloco próprio que renderiza seu formulário, monta
          seu handler e retorna, nunca chegando ao código de Vigilante
@@ -1912,6 +1912,14 @@ function baseDaFuncaoDisplay(funcaoNorm){
   const sufixo=' LÍDER DE EQUIPE';
   return funcaoNorm.endsWith(sufixo) ? funcaoNorm.slice(0, -sufixo.length) : funcaoNorm;
 }
+/* REGRA PROFISSIONAL: COORDENADOR e SUPERVISOR são vigilantes.
+   A função específica continua sendo preservada no cadastro/escala,
+   mas ambos pertencem à categoria Vigilante para cadastro, validações,
+   documentos, crachás, relatórios e demais fluxos que exigem vigilante. */
+function ehFuncaoVigilante(funcao){
+  const norm=normalizaFuncaoDisplay(funcao);
+  return norm.startsWith('VIGILANTE') || norm==='SUPERVISOR' || norm==='COORDENADOR';
+}
 function ordenarValoresFuncaoParaExibicao(lista){
   /* Ordem OFICIAL fixa dos grupos (Coordenador, Supervisor, Vigilante,
      Aux. de Serviços Gerais, Brigadista, Carregador) — não é mais
@@ -2387,7 +2395,7 @@ function attachPreEscalaListaHandlers(){
          (qualquer variação) — regra direta, sem +2 anos: a reciclagem
          precisa cobrir até a data final do evento. */
       const cpfNormP=(p.cpf||'').replace(/\D/g,'');
-      if((p.funcao||'').trim().toUpperCase().startsWith('VIGILANTE')){
+      if(ehFuncaoVigilante(p.funcao)){
         await loadColaboradoresBanco();
         const colab=buscarColaboradorPorCpf(cpfNormP);
         if(!reciclagemValidaAteFinalEvento(colab&&colab.reciclagem, currentEvent())){
@@ -3086,7 +3094,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
      removida por duplicar essa informação. */
   if(!fechamentoDados.length || !eventoDias.length) return `<div class="empty"><b>Sem dados suficientes para esta visão</b></div>`;
   const ev=currentEvent();
-  const ehVigilante=f=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(f.funcao))==='VIGILANTE';
+  const ehVigilante=f=>ehFuncaoVigilante(f.funcao);
   const vigilantes=fechamentoDados.filter(ehVigilante);
   const demais=fechamentoDados.filter(f=>!ehVigilante(f));
   // Nome + Função [+ CPF] + 1 por dia + Dias + Valor + Adic./Desc./Total [+ Assinatura + Data]
@@ -3401,7 +3409,7 @@ async function loadColaboradoresBanco(){
      as duas variações fixas de antes. */
   colaboradoresBanco.forEach(c=>{
     const funcaoNorm=normalizaFuncaoDisplay(c.funcao);
-    c._ehVigilantePorFuncao = funcaoNorm.startsWith('VIGILANTE');
+    c._ehVigilantePorFuncao = ehFuncaoVigilante(funcaoNorm);
     c._ehBrigadistaPorFuncao = funcaoNorm.startsWith('BRIGADISTA');
   });
   /* Classificação nas subabas passou a ser baseada no HISTÓRICO REAL
@@ -3704,10 +3712,12 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
           <option value="">Selecione a função</option>
           <option value="VIGILANTE" ${existente&&existente.funcao==='VIGILANTE'?'selected':''}>VIGILANTE</option>
           <option value="VIGILANTE LÍDER DE EQUIPE" ${existente&&existente.funcao==='VIGILANTE LÍDER DE EQUIPE'?'selected':''}>VIGILANTE LÍDER DE EQUIPE</option>
+          <option value="SUPERVISOR" ${existente&&existente.funcao==='SUPERVISOR'?'selected':''}>SUPERVISOR</option>
+          <option value="COORDENADOR" ${existente&&existente.funcao==='COORDENADOR'?'selected':''}>COORDENADOR</option>
           <option value="BRIGADISTA" ${(existente&&existente.funcao==='BRIGADISTA')||esconderCampoFuncao?'selected':''}>BRIGADISTA</option>
-          <option value="__outra__" ${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'selected':''}>Outra função</option>
+          <option value="__outra__" ${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','SUPERVISOR','COORDENADOR','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'selected':''}>Outra função</option>
         </select>
-        <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
+        <input type="text" id="fcbFuncaoOutra" placeholder="Digite a função" style="margin-top:6px; display:${(existente&&existente.funcao&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','SUPERVISOR','COORDENADOR','BRIGADISTA'].includes(existente.funcao))||prefixarOutraFuncao?'block':'none'};" value="${escapeHtml(existente&&!['VIGILANTE','VIGILANTE LÍDER DE EQUIPE','SUPERVISOR','COORDENADOR','BRIGADISTA'].includes(existente.funcao||'')?(existente.funcao||''):'')}">
       </div>
       <div class="field"><label>Nome completo</label><input type="text" id="fcbNome" value="${escapeHtml(existente?nomeExibicao(existente.nome):'')}"></div>
       <div class="field"><label>CPF</label><input type="text" id="fcbCpf" maxlength="14" placeholder="000.000.000-00" value="${existente?formatCpf(existente.cpf):''}" ${ehEdicao?'disabled':''}></div>
@@ -3767,7 +3777,7 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
   const atualizarCamposPorFuncao=()=>{
     const funcaoAtual = funcaoSel.value==='__outra__' ? funcaoOutra.value.trim() : funcaoSel.value;
     const funcaoAtualNorm = normalizaFuncaoDisplay(funcaoAtual);
-    const ehVig = funcaoAtualNorm.startsWith('VIGILANTE');
+    const ehVig = ehFuncaoVigilante(funcaoAtualNorm);
     const ehBrig = funcaoAtualNorm.startsWith('BRIGADISTA');
     camposVigilante.style.display = ehVig ? '' : 'none';
     camposBrigadista.style.display = ehBrig ? '' : 'none';
@@ -3797,7 +3807,7 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
        "Outra função" agora é reconhecido como Vigilante aqui também,
        não só na listagem). */
     const funcaoNormSalvar=normalizaFuncaoDisplay(funcao);
-    const ehVig = funcaoNormSalvar.startsWith('VIGILANTE');
+    const ehVig = ehFuncaoVigilante(funcaoNormSalvar);
     const ehBrig = funcaoNormSalvar.startsWith('BRIGADISTA');
     const ehDemais = !ehVig && !ehBrig;
     const grandesEventosValor = ehVig ? document.getElementById('fcbGrandesEventos').value : '';
@@ -3920,7 +3930,7 @@ function renderImpressaoCrachas(){
      escalado) foi removido e virou uma variável de controle
      (semVigilantes), porque agora a tela pode ter conteúdo de
      Brigadista mesmo sem nenhum Vigilante escalado, e vice-versa. */
-  const ehVigilante=s=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(s.funcao))==='VIGILANTE';
+  const ehVigilante=s=>ehFuncaoVigilante(s.funcao);
   const escalados=staff.filter(s=>s.escalado && ehVigilante(s));
   const linkCracha=`${location.origin}${location.pathname}?modo=cracha&evento=${ev.id}`;
   const semVigilantes = escalados.length===0;
@@ -4247,7 +4257,7 @@ function attachImpressaoCrachasHandlers(){
   });
   const btnImprimir=document.getElementById('btnImprimirCrachas');
   if(btnImprimir) btnImprimir.onclick=()=>{
-    const ehVigilante=s=>baseDaFuncaoDisplay(normalizaFuncaoDisplay(s.funcao))==='VIGILANTE';
+    const ehVigilante=s=>ehFuncaoVigilante(s.funcao);
     const selecionados=staff.filter(s=>s.escalado && ehVigilante(s) && crachaSelecionados.has(s.cpf) && statusCrachaColaborador(buscarColaboradorPorCpf(s.cpf)).completo);
     if(!selecionados.length){ showToast('SELECIONE PELO MENOS UM COLABORADOR PARA IMPRIMIR.'); return; }
     try{
@@ -4798,7 +4808,7 @@ function attachDetailHandlers(){
        RG/reciclagem/etc.) já foi aprovado explicitamente em rodada
        anterior. Recarrega o Banco para não depender de a aba de
        Impressão de Crachás já ter sido visitada. */
-    if(funcao.trim().toUpperCase().startsWith('VIGILANTE')){
+    if(ehFuncaoVigilante(funcao)){
       await loadColaboradoresBanco();
       const colabExistente=buscarColaboradorPorCpf(cpfLimpo);
       if(colabExistente && colabExistente.reciclagem && !reciclagemValidaAteFinalEvento(colabExistente.reciclagem, currentEvent())){
