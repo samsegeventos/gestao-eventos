@@ -4,6 +4,18 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Samseg — Gestão de Eventos</title>
+<!-- ===== PWA (camada aditiva) =====
+     Só adiciona a possibilidade de instalar o sistema como app —
+     não interfere em nada do funcionamento normal via navegador.
+     Ícones/manifest usam caminhos relativos, compatíveis com o
+     subpath do GitHub Pages (/gestao-eventos/). -->
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#14161c">
+<link rel="icon" type="image/png" sizes="192x192" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Samseg Eventos">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -5198,6 +5210,35 @@ function attachDetailHandlers(){
 
 /* ================= INIT ================= */
 loadAll();
+
+/* ================= PWA — registro do Service Worker =================
+   Camada 100% aditiva: se o navegador não suportar Service Worker
+   (feature detection abaixo), esse bloco simplesmente não executa
+   nada, e o sistema continua funcionando exatamente como aplicação
+   web normal — a aplicação nunca depende disso para funcionar.
+   Também garante a atualização segura: quando uma nova versão do
+   Service Worker assume o controle (ou seja, uma nova publicação foi
+   detectada), a página recarrega sozinha para o usuário nunca ficar
+   preso numa versão antiga do sistema. */
+if('serviceWorker' in navigator){
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').then(registration => {
+      // Verifica se já existe uma atualização assim que a página carrega.
+      registration.update();
+      // E também periodicamente, para quem deixa o app aberto por muito tempo.
+      setInterval(() => registration.update(), 60 * 60 * 1000); // a cada 1h
+    }).catch(err => {
+      console.error('Falha ao registrar o Service Worker (PWA):', err);
+    });
+
+    let jaRecarregou = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if(jaRecarregou) return; // evita loop de reload
+      jaRecarregou = true;
+      window.location.reload();
+    });
+  });
+}
 </script>
 
 </body>
