@@ -2556,16 +2556,22 @@ function renderAprovacaoGestor(){
      A antiga visualização/relatório separado da Presidência foi removida.
      O fechamento continua usando exatamente fechamentoDados e o mesmo
      status já existente para aprovação — nenhuma regra financeira nova.
-     AJUSTE DESTA RODADA — antes, a prévia só aparecia DEPOIS de
-     aprovado (status!=='aberto'); enquanto aberto, mostrava só
-     "Impressão bloqueada" e nada mais. Agora a prévia (mesma função,
-     mesmos dados, sem nenhum cálculo novo) aparece sempre que houver
-     fechamentoDados — aprovado ou não — para o gestor conferir antes
-     de decidir. O botão de aprovação continua exigindo clique
-     explícito; abrir a aba nunca aprova nada sozinha. */
+     A prévia (mesma função, mesmos dados, sem nenhum cálculo novo)
+     aparece sempre que houver fechamentoDados — aprovado ou não —
+     para o gestor conferir antes de decidir. O botão de aprovação
+     continua exigindo clique explícito; abrir a aba nunca aprova nada
+     sozinha.
+     NOVO NESTA RODADA — a prévia continua sempre visível (não usada
+     mais para esconder nada), mas a IMPRESSÃO (botão dentro de
+     renderTabelaFechamentoImpressao) só fica liberada depois que o
+     fechamento é efetivamente aprovado. Reaproveita exatamente o
+     mesmo estado (ev.status) já usado logo abaixo para decidir entre
+     "Aprovar"/"Reabrir" — não é uma condição nova, é a mesma, só
+     também controlando o 4º parâmetro (permitirImpressao). */
   if(!fechamentoDados.length) return `<div class="empty"><b>Fechamento ainda não disponível para aprovação</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
+  const fechamentoAprovado=ev.status!=='aberto';
   return `
-    ${renderTabelaFechamentoImpressao(true, true, false)}
+    ${renderTabelaFechamentoImpressao(true, true, false, fechamentoAprovado)}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -3121,7 +3127,7 @@ function funcaoParaImpressaoHTML(funcaoReal){
   if(norm.endsWith(sufixo)) return `${escapeHtml(norm.slice(0,-sufixo.length))}<br>LÍDER`;
   return escapeHtml(norm||'—');
 }
-function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, listagemUnica){
+function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, listagemUnica, permitirImpressao){
   /* Fechamento Gestor / Impressão — relatório único.
      IMPORTANTE: esta função altera somente a apresentação do relatório.
      A fonte financeira continua sendo fechamentoDados e os valores
@@ -3144,9 +3150,18 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     </th></tr>`;
 
   const colgroup=(()=>{
-    const antesDosDias = mostrarCpf ? ['15%','12%','9%'] : ['18%','15%'];
+    /* AJUSTE DE LARGURAS — reduzidas as colunas fixas de texto curto
+       (nome/função/cpf/dias/valor/adic/desc/total) para sobrar mais
+       espaço percentual para as colunas de DIAS do evento, que
+       ficavam praticamente ilegíveis em eventos longos (antes só 8%
+       do total dividido entre todos os dias). ASSINATURA (15%) e
+       DATA (7%) NÃO foram tocadas — mesma largura de sempre. Nenhuma
+       coluna usa text-overflow/ellipsis; quando o texto não couber,
+       a célula quebra linha normalmente (comportamento já existente,
+       preservado). */
+    const antesDosDias = mostrarCpf ? ['11%','8%','7%'] : ['18%','15%'];
     const depoisDosDias = mostrarAssinaturaData
-      ? ['4%','8%','7%','7%','8%','15%','7%']
+      ? ['3%','6%','5%','5%','6%','15%','7%']
       : ['5%','10%','9%','9%','10%'];
     const fixas=[...antesDosDias, ...depoisDosDias];
     const somaFixas=fixas.reduce((s,v)=>s+parseFloat(v),0);
@@ -3244,7 +3259,9 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
 
   const totalGeral=fechamentoDados.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
   return `
-    <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button></div>
+    <div style="margin-bottom:14px;">${permitirImpressao
+      ? `<button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button>`
+      : `<button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento" disabled title="A impressão é liberada depois que o gestor aprovar o fechamento da equipe.">Imprimir / Exportar PDF (bloqueado até a aprovação)</button>`}</div>
     ${renderSecaoGrupo('VIGILANTES', gruposVigilantes, false)}
     ${renderSecaoGrupo('DEMAIS FUNÇÕES', gruposDemais, gruposVigilantes.length>0)}
     <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid; break-inside:avoid;">
