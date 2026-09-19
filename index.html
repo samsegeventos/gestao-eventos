@@ -249,6 +249,16 @@
     thead th,tbody td{border-color:#ccc;}
     .totals .value{color:#000;}
     .tabela-fechamento-datas thead th{background:#f2f2f2 !important; color:#333 !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    /* NOVO NESTA RODADA — na TELA (Aprovação do Gestor) a tabela usa
+       width:100% (regra base da classe, responsiva ao container). Só
+       NA IMPRESSÃO ela volta à largura física exata calculada para o
+       A4 paisagem (--tabela-largura-mm, definida inline por tabela,
+       já que cada uma pode ter uma largura total levemente diferente
+       dependendo de mostrarCpf/mostrarAssinaturaData). Isso mantém a
+       pré-visualização em tela ocupando o espaço disponível sem
+       aplicar a proporção física do papel, e a impressão exatamente
+       como já era — A4 paisagem, mesmas larguras calculadas. */
+    .tabela-fechamento-datas{width:var(--tabela-largura-mm, 100%) !important;} /* fallback 100% — nunca afeta a outra tabela (resumo por função), que não define essa variável */
     .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#d6d6d6 !important; color:#1a1a1a !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2 !important;}
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
@@ -291,7 +301,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 09:30';
+const APP_VERSION = '19/09/2026 09:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3160,21 +3170,26 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     </th></tr>`;
 
   const colgroupInfo=(()=>{
-    /* REDISTRIBUÍDO NESTA RODADA — 12 colunas agora (voltou a coluna
-       VALOR = valor_base, que tinha sido removida por engano na
-       reestruturação anterior, deixando só VAL/FUNÇÃO = valor_diaria).
-       Larguras revisadas para reduzir o espaço em branco excessivo
-       relatado (CPF/FUNÇÃO/financeiras estavam com folga demais) e
-       dar mais espaço a NOME (para caber inteiro sem quebrar quando
-       possível). ASSINATURA (15%) e DATA (7%) continuam exatamente
-       na mesma proporção física de sempre — não tocadas. Soma exata
-       das colunas fixas + DIAS TRAB. = 277mm (largura útil do A4
-       paisagem), a tabela nunca ultrapassa a página. */
+    /* REDISTRIBUÍDO NESTA RODADA — NOME, VAL/FUNÇÃO, Nº DIAS e TOTAL
+       aumentados (NOME para caber nomes inteiros com mais folga;
+       VAL/FUNÇÃO e Nº DIAS para o próprio título do cabeçalho não
+       embolar com a coluna vizinha; TOTAL para o valor parar de
+       invadir visualmente a coluna ASSINATURA). Espaço tirado só de
+       FUNÇÃO (levemente — "VIGILANTE" cabe folgado mesmo menor) e de
+       DIAS TRAB. (mais — é a única coluna para a qual o pedido desta
+       rodada autoriza explicitamente reduzir fonte para compensar,
+       ver fontePxDiasTrab). CPF, VALOR, ADIC., DESC. — não tocados
+       ("não mexer desnecessariamente"). ASSINATURA (15%) e DATA (7%)
+       continuam exatamente na mesma proporção física de sempre — não
+       tocadas. Soma exata das colunas = 277mm (largura útil do A4
+       paisagem) — usada para a IMPRESSÃO; a pré-visualização em tela
+       passa a ser responsiva (100% do container), ver @media print
+       mais abaixo no CSS e a variável --tabela-largura-mm. */
     const LARGURA_UTIL_MM=277; // A4 paisagem (297mm) menos 10mm de margem de cada lado
-    const antesMm = mostrarCpf ? [36,20,23] : [46,30]; // NOME, FUNÇÃO, CPF
+    const antesMm = mostrarCpf ? [42,18,23] : [52,30]; // NOME, FUNÇÃO, CPF
     const depoisMm = mostrarAssinaturaData
-      ? [18,12,39,18,16,16,18, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VAL/FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR, ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
-      : [22,14,47,22,19,19,22];
+      ? [22,16,23,18,16,16,22, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VAL/FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR, ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
+      : [26,20,27,22,19,19,26];
     const larguraTabelaMm=[...antesMm, ...depoisMm].reduce((s,v)=>s+v,0);
     const html=`<colgroup>
       ${antesMm.map(w=>`<col style="width:${w}mm">`).join('')}
@@ -3225,6 +3240,17 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       }).filter(Boolean);
       return partes.join(', ');
     });
+    /* NOVO NESTA RODADA — fonte PRÓPRIA só da coluna DIAS TRAB.,
+       calculada para caber a lista mais longa do grupo numa linha só;
+       nunca maior que a fonte normal da tabela (fontePx), com piso de
+       7px (ainda legível em impressão). As demais colunas continuam
+       na fonte normal — o pedido é explícito: reduzir fonte SÓ dessa
+       coluna, nunca das outras, para resolver o problema dela. Se
+       mesmo no piso a lista não couber, a quebra entre dias (já
+       implementada) assume o resto. */
+    const maiorLenDiasTrab=Math.max(1, ...diasTrabTextoPorPessoa.map(s=>s.length));
+    const fontePorDiasTrab=colgroupInfo.larguraDiasTrabMm/(maiorLenDiasTrab*0.159);
+    const fontePxDiasTrab=Math.max(7, Math.min(Number(fontePx), fontePorDiasTrab)).toFixed(1);
 
     const linhas=lista.map((f,i)=>{
       /* Alerta "Escalado também" — preservado sem alteração de lógica,
@@ -3240,7 +3266,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
         ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
         <td class="col-financeira-fechamento">${f.valor_diaria!=null?brl(f.valor_diaria):'—'}</td>
         <td>${f.dias_trabalhados}</td>
-        <td class="col-dias-trab">${escapeHtml(diasTrabTextoPorPessoa[i])}</td>
+        <td class="col-dias-trab" style="font-size:${fontePxDiasTrab}px;">${escapeHtml(diasTrabTextoPorPessoa[i])}</td>
         <td class="col-financeira-fechamento">${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
         <td class="col-financeira-fechamento">${valorOuTraco(f.valor_excedente)}</td>
         <td class="col-financeira-fechamento">${valorOuTraco(f.desconto)}</td>
@@ -3251,7 +3277,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
 
     return `
       <div class="folha-fechamento bloco-funcao-fechamento" style="page-break-inside:avoid;">
-        <table class="tabela-fechamento-datas" style="font-size:${fontePx}px; width:${colgroupInfo.larguraTabelaMm.toFixed(2)}mm;">
+        <table class="tabela-fechamento-datas" style="font-size:${fontePx}px; --tabela-largura-mm:${colgroupInfo.larguraTabelaMm.toFixed(2)}mm;">
           ${colgroup}
           <thead>
             ${cabecalhoRepetido()}
