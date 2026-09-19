@@ -289,7 +289,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 08:50';
+const APP_VERSION = '27/08/2026 09:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -4467,6 +4467,42 @@ function attachCpfsAutorizadosHandlers(){
     }
     if(!cpf){ showToast('Informe o CPF.'); return; }
     if(!funcao){ showToast('Informe a função.'); return; }
+
+    /* NOVO NESTA RODADA — antes de autorizar, consulta (só
+       informativa, nunca bloqueante por si só) se este CPF já possui
+       alguma escala efetiva em OUTRO evento, em qualquer um dos dias
+       do evento atual (eventoDias, estrutura já existente — nenhum
+       dia novo é criado ou inferido). Uma chamada por dia, em
+       paralelo (Promise.all), já que são consultas independentes.
+       Se QUALQUER uma delas falhar, interrompe e avisa o gestor —
+       nunca trata erro como "sem conflito" (silenciar aqui esconderia
+       exatamente o problema que este alerta existe para mostrar). */
+    let resultadosPorDia;
+    try{
+      resultadosPorDia=await Promise.all(
+        eventoDias.map(d=>sb.rpc('verificar_conflito_cpf_dia',{p_cpf:cpf, p_evento_id:currentEventId, p_data:d.data}))
+      );
+    }catch(errConflito){
+      console.error('Falha ao verificar conflito de escala:', errConflito);
+      showToast('Não foi possível verificar conflito de escala em outro evento. Tente novamente.');
+      return;
+    }
+    const erroConflito=resultadosPorDia.find(r=>r.error);
+    if(erroConflito){
+      console.error('Falha ao verificar conflito de escala:', erroConflito.error);
+      showToast('Não foi possível verificar conflito de escala em outro evento. Tente novamente.');
+      return;
+    }
+    const conflitos=resultadosPorDia.flatMap(r=>r.data||[]);
+
+    if(conflitos.length){
+      const msg = '⚠️ ATENÇÃO — COLABORADOR JÁ AUTORIZADO EM OUTRO EVENTO\n\n'
+        + `Colaborador: ${nome||'—'}\nCPF: ${cpf}\nFunção: ${funcao}\n\n`
+        + 'Outras escalas encontradas:\n\n'
+        + conflitos.map(c=>`Evento: ${c.outro_evento||c.outro_evento_id}\nData: ${formatDate(c.data)}\nHorário: ${(c.hora_inicio||'').slice(0,5)} às ${(c.hora_fim||'').slice(0,5)}\nFunção: ${c.funcao}\n`).join('\n');
+      if(!confirm(msg)) return;
+    }
+
     const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:nome||null, p_funcao:funcao});
     if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
   };
