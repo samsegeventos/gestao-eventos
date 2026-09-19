@@ -289,7 +289,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '27/08/2026 09:15';
+const APP_VERSION = '19/09/2026 08:51';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -663,6 +663,14 @@ let ultimoErroEventoDias = null; // diagnóstico visível: null = consulta OK ma
 let participacoesNovas = [];
 let escalaDias = [];
 let presencasNovas = [];
+/* NOVO — pré-calculado dentro de loadDiasEscalaPresenca (mesmo ponto
+   central que já carrega fechamentoDados/escalaDias/eventoDias), para
+   o alerta "Escalado também" na impressão/prévia (Ajuste 1). Chave:
+   participacao_id (string) -> array de conflitos retornados por
+   verificar_conflito_cpf_dia (mesma RPC já usada em CPF Autorizado e
+   Adicionar Manualmente). Puramente informativo — nunca bloqueia
+   nada, e uma falha aqui não impede o carregamento do resto. */
+let conflitosPorParticipacao = {};
 let diaSelecionadoPresenca = null;
 let fechamentoVisao = 'colaborador'; // 'colaborador' ou 'funcao' — só estado de exibição, não afeta os dados
 let aprovacaoVisao = 'gestor'; // mantido apenas por compatibilidade com versões anteriores; a Aprovação do Gestor possui uma única impressão.
@@ -796,6 +804,41 @@ async function loadDiasEscalaPresenca(){
        filtro não remove ninguém, comportamento idêntico ao atual. */
     const idsAnulados=new Set(participacoesNovas.filter(p=>p.anulada).map(p=>pid(p)));
     fechamentoDados=(fech||[]).filter(f=>!idsAnulados.has(f.participacao_id));
+
+    /* NOVO — pré-calcula conflitos de escala em outro evento (Ajuste 1
+       da impressão/prévia), reaproveitando verificar_conflito_cpf_dia
+       (mesma RPC já usada em CPF Autorizado/Adicionar Manualmente).
+       Só para os dias em que a pessoa está de fato escalada NESTE
+       evento (escaladoNoDia, já carregado acima em escalaDias) —
+       nunca todos os dias do evento indiscriminadamente. Puramente
+       informativo: Promise.allSettled, uma falha isolada não derruba
+       o carregamento do resto nem aparece como erro para o gestor —
+       só significa que aquele alerta específico não aparece. */
+    try{
+      const tarefasConflito=[];
+      fechamentoDados.forEach(f=>{
+        const diasEscaladosDele=eventoDias.filter(d=>escaladoNoDia(f.participacao_id, d.id));
+        diasEscaladosDele.forEach(d=>{
+          tarefasConflito.push(
+            sb.rpc('verificar_conflito_cpf_dia',{p_cpf:f.cpf, p_evento_id:currentEventId, p_data:d.data})
+              .then(r=>({participacaoId:String(f.participacao_id), resultado:r}))
+          );
+        });
+      });
+      const respostasConflito=await Promise.allSettled(tarefasConflito);
+      const novoConflitosPorParticipacao={};
+      respostasConflito.forEach(res=>{
+        if(res.status!=='fulfilled') return;
+        const {participacaoId,resultado}=res.value;
+        if(!resultado || resultado.error || !resultado.data || !resultado.data.length) return;
+        if(!novoConflitosPorParticipacao[participacaoId]) novoConflitosPorParticipacao[participacaoId]=[];
+        novoConflitosPorParticipacao[participacaoId].push(...resultado.data);
+      });
+      conflitosPorParticipacao=novoConflitosPorParticipacao;
+    }catch(errConflitoImpressao){
+      console.error('Falha ao pré-calcular conflitos de escala para a impressão (não bloqueante):', errConflitoImpressao);
+      conflitosPorParticipacao={};
+    }
   }catch(err){
     console.error(err);
     participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[];
@@ -2512,13 +2555,17 @@ function renderAprovacaoGestor(){
   /* Aprovação do Gestor: existe UMA ÚNICA impressão oficial nesta aba.
      A antiga visualização/relatório separado da Presidência foi removida.
      O fechamento continua usando exatamente fechamentoDados e o mesmo
-     status já existente para aprovação — nenhuma regra financeira nova. */
-  if(!fechamentoDados.length) return `<div class="empty"><b>Ainda sem dados de fechamento</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
-  const aprovado=ev.status!=='aberto';
+     status já existente para aprovação — nenhuma regra financeira nova.
+     AJUSTE DESTA RODADA — antes, a prévia só aparecia DEPOIS de
+     aprovado (status!=='aberto'); enquanto aberto, mostrava só
+     "Impressão bloqueada" e nada mais. Agora a prévia (mesma função,
+     mesmos dados, sem nenhum cálculo novo) aparece sempre que houver
+     fechamentoDados — aprovado ou não — para o gestor conferir antes
+     de decidir. O botão de aprovação continua exigindo clique
+     explícito; abrir a aba nunca aprova nada sozinha. */
+  if(!fechamentoDados.length) return `<div class="empty"><b>Fechamento ainda não disponível para aprovação</b>Registre entrada e saída no Checkout por Dia para liberar a aprovação.</div>`;
   return `
-    ${aprovado
-      ? renderTabelaFechamentoImpressao(true, true, false)
-      : `<div class="empty"><b>Impressão bloqueada</b>Aprove o fechamento da equipe para liberar o Fechamento Gestor / Impressão.</div>`}
+    ${renderTabelaFechamentoImpressao(true, true, false)}
     <div style="margin-top:20px; display:flex; gap:10px; justify-content:flex-end;">
       ${ev.status==='aberto'
         ? `<button class="btn btn-teal" id="btnAprovar">Aprovar fechamento da equipe</button>`
@@ -3116,9 +3163,21 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
   const gerarTabelaFuncao=(grupo)=>{
     const lista=grupo.itens;
     const subtotal=lista.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
-    const linhas=lista.map(f=>`
+    const linhas=lista.map(f=>{
+      /* AJUSTE 1 — alerta "Escalado também", só informativo, abaixo do
+         nome. Fonte de dados: conflitosPorParticipacao, já pré-
+         calculado em loadDiasEscalaPresenca via verificar_conflito_cpf_dia
+         (mesma RPC, mesma regra — participacao_dias.escalado=true no
+         dia correspondente). Nunca altera f.total_receber nem nenhum
+         outro valor — é só uma linha extra dentro da mesma célula do
+         nome, sem coluna nova. */
+      const conflitosDele=conflitosPorParticipacao[String(f.participacao_id)];
+      const alertaConflito=(conflitosDele&&conflitosDele.length)
+        ? `<div style="font-size:7px; color:#b45309; line-height:1.25; margin-top:1px; font-weight:600;">⚠ Escalado também: ${escapeHtml([...new Set(conflitosDele.map(c=>c.outro_evento||c.outro_evento_id))].join('; '))}</div>`
+        : '';
+      return `
       <tr>
-        <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}</td>
+        <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}${alertaConflito}</td>
         <td class="col-func-presidencia">${funcaoParaImpressaoHTML(f.funcao)}</td>
         ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
         ${eventoDias.map(d=>{
@@ -3133,7 +3192,8 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
         <td>${valorOuTraco(f.desconto)}</td>
         <td>${brl(f.total_receber)}</td>
         ${mostrarAssinaturaData?'<td class="col-assinatura"></td><td class="col-data-manual"></td>':''}
-      </tr>`).join('');
+      </tr>`;
+    }).join('');
 
     return `
       <div class="folha-fechamento bloco-funcao-fechamento" style="page-break-inside:avoid;">
@@ -3161,10 +3221,32 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       </div>`;
   };
 
+  /* AJUSTE 2 — separação física VIGILANTES / DEMAIS FUNÇÕES na
+     impressão. Reaproveita ehFuncaoVigilante() já existente (mesma
+     regra usada em todo o resto do sistema, inclusive Supervisor e
+     Coordenador contam como grupo Vigilantes, como já era o caso
+     antes desta alteração) para decidir em qual dos dois grupos cada
+     grupo de função (já vindo de agruparPorFuncaoPrincipal) entra.
+     Cada grupo interno continua com sua própria quebra de página
+     (page-break-inside:avoid, já existente, intocada) — só a fronteira
+     ENTRE os dois blocos ganha page-break-before, e só quando há
+     conteúdo dos dois lados (evita página em branco desnecessária). */
+  const gruposVigilantes=grupos.filter(g=>ehFuncaoVigilante(g.funcao));
+  const gruposDemais=grupos.filter(g=>!ehFuncaoVigilante(g.funcao));
+  const renderSecaoGrupo=(titulo, listaGrupos, comQuebraAntes)=>{
+    if(!listaGrupos.length) return '';
+    return `
+      <div class="secao-impressao-grupo"${comQuebraAntes?' style="page-break-before: always;"':''}>
+        <div class="card-title" style="margin: 6px 0 10px 0; font-size:15px;">${escapeHtml(titulo)}</div>
+        ${listaGrupos.map(gerarTabelaFuncao).join('')}
+      </div>`;
+  };
+
   const totalGeral=fechamentoDados.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
   return `
     <div style="margin-bottom:14px;"><button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button></div>
-    ${grupos.map(gerarTabelaFuncao).join('')}
+    ${renderSecaoGrupo('VIGILANTES', gruposVigilantes, false)}
+    ${renderSecaoGrupo('DEMAIS FUNÇÕES', gruposDemais, gruposVigilantes.length>0)}
     <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid; break-inside:avoid;">
       TOTAL GERAL DO EVENTO: <span style="margin-left:10px;">${brl(totalGeral)}</span>
     </div>
