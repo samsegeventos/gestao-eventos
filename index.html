@@ -155,6 +155,117 @@
        ajustes deles já existiam antes desta etapa, não foram tocados. */
   }
 
+
+  /* ================= MOBILE CARDS — ETAPA 3 =================
+     Desktop continua usando as tabelas originais.
+     No celular, as 3 telas prioritárias usam cards verticais.
+     O avatar já reserva o espaço da futura foto do colaborador;
+     por enquanto exibe as iniciais, sem alterar banco ou cadastro. */
+  .mobile-card-list{display:none;}
+  .mobile-person-card{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:12px;
+    margin-bottom:10px;
+    display:flex;
+    gap:12px;
+    align-items:flex-start;
+  }
+  .mobile-person-avatar{
+    width:48px;
+    height:48px;
+    min-width:48px;
+    border-radius:50%;
+    border:1px solid var(--line);
+    background:var(--surface-2);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-weight:700;
+    font-size:14px;
+    color:var(--amber);
+    overflow:hidden;
+  }
+  .mobile-person-avatar img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+  }
+  .mobile-person-main{flex:1; min-width:0;}
+  .mobile-person-name{
+    font-weight:700;
+    font-size:14px;
+    line-height:1.25;
+    overflow-wrap:anywhere;
+  }
+  .mobile-person-role{
+    color:var(--muted);
+    font-size:11.5px;
+    text-transform:uppercase;
+    margin-top:2px;
+  }
+  .mobile-person-meta{
+    color:var(--muted);
+    font-size:12px;
+    margin-top:6px;
+    line-height:1.45;
+  }
+  .mobile-person-status{
+    margin-top:8px;
+    display:flex;
+    align-items:center;
+    gap:7px;
+    flex-wrap:wrap;
+  }
+  .mobile-person-actions{
+    margin-top:10px;
+    display:flex;
+    gap:7px;
+    flex-wrap:wrap;
+  }
+  .mobile-person-actions .btn{flex:1 1 auto;}
+  .mobile-card-arrow{
+    color:var(--muted);
+    font-size:22px;
+    line-height:1;
+    padding-top:10px;
+  }
+  .mobile-card-group-title{
+    margin:16px 0 8px;
+    padding:8px 10px;
+    border-left:3px solid var(--amber);
+    background:var(--surface-2);
+    border-radius:7px;
+    font-size:11.5px;
+    font-weight:700;
+    text-transform:uppercase;
+    letter-spacing:.3px;
+  }
+  .mobile-card-group-title:first-child{margin-top:4px;}
+  .mobile-day-summary{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin:10px 0 12px;
+  }
+  .mobile-summary-chip{
+    border:1px solid var(--line);
+    background:var(--surface-2);
+    border-radius:999px;
+    padding:6px 9px;
+    font-size:11px;
+  }
+  .mobile-checkout-time{
+    font-family:'JetBrains Mono',monospace;
+    font-size:12px;
+  }
+  @media(max-width:860px){
+    .desktop-table{display:none !important;}
+    .mobile-card-list{display:block;}
+  }
+
   /* ---------- dashboard ---------- */
   .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
   .stat-card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px;}
@@ -366,7 +477,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 11:15';
+const APP_VERSION = '19/09/2026 11:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2575,30 +2686,61 @@ function renderEscalaOficialLista(){
   const grupos=agruparPorFuncaoPrincipal(staffFiltrado, c=>c.funcao, c=>c.nome);
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
-    <table>
-      <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
-      <tbody>
-        ${linhasComTituloDeGrupo(grupos, 7, (c,numero)=>`
-          <tr data-id="${c.id}">
-            <td class="mono">${numero}</td>
-            <td>${escapeHtml(nomeExibicao(c.nome))}</td>
-            <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
-            <td class="mono">${escapeHtml(c.cpf||'—')}</td>
-            <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
-            <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
-            <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
-          </tr>`)}
-      </tbody>
-    </table>
+    <div class="desktop-table">
+      <table>
+        <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>CPF</th><th>Telefone</th><th>Escalado</th><th></th></tr></thead>
+        <tbody>
+          ${linhasComTituloDeGrupo(grupos, 7, (c,numero)=>`
+            <tr data-id="${c.id}">
+              <td class="mono">${numero}</td>
+              <td>${escapeHtml(nomeExibicao(c.nome))}</td>
+              <td>${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="badge pendente" style="margin-left:4px;">sem valor</span>' : ''}</td>
+              <td class="mono">${escapeHtml(c.cpf||'—')}</td>
+              <td class="mono">${escapeHtml(c.telefone?formatTelefone(c.telefone):'—')}</td>
+              <td><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></td>
+              <td><button class="btn btn-danger btn-sm btn-remove-staff">Remover</button></td>
+            </tr>`)}
+        </tbody>
+      </table>
+    </div>
+    <div class="mobile-card-list">
+      ${grupos.map(g=>`
+        <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+        ${g.itens.map(c=>`
+          <div class="mobile-person-card" data-id="${c.id}">
+            <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(c.nome))}</div>
+            <div class="mobile-person-main">
+              <div class="mobile-person-name">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
+              <div class="mobile-person-role">${escapeHtml(c.funcao||'—')}</div>
+              <div class="mobile-person-meta">
+                CPF: <span class="mono">${escapeHtml(c.cpf||'—')}</span><br>
+                ${c.telefone ? `WhatsApp: ${escapeHtml(formatTelefone(c.telefone))}` : 'WhatsApp: não cadastrado'}
+              </div>
+              <div class="mobile-person-status">
+                <label class="checkbox-wrap">
+                  <input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}>
+                  <span>${c.escalado?'ESCALADO':'NÃO ESCALADO'}</span>
+                </label>
+                ${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? '<span class="badge pendente">Sem valor</span>' : ''}
+              </div>
+              <div class="mobile-person-actions">
+                <button class="btn btn-danger btn-sm btn-remove-staff">Remover</button>
+              </div>
+            </div>
+            <div class="mobile-card-arrow">›</div>
+          </div>
+        `).join('')}
+      `).join('')}
+    </div>
   `;
 }
 
 function attachEscalaOficialListaHandlers(){
   document.querySelectorAll('.chk-escalado').forEach(chk=>{
-    chk.onchange=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); c.escalado=e.target.checked; await saveStaff(); renderShell(); };
+    chk.onchange=async (e)=>{ const card=e.target.closest('[data-id]'); const id=card.dataset.id; const c=staff.find(s=>s.id===id); c.escalado=e.target.checked; await saveStaff(); renderShell(); };
   });
   document.querySelectorAll('.btn-remove-staff').forEach(btn=>{
-    btn.onclick=async (e)=>{ const id=e.target.closest('tr').dataset.id; const c=staff.find(s=>s.id===id); if(!confirm(`Remover ${c.nome} deste evento?`)) return; staff=staff.filter(s=>s.id!==id); await saveStaff(); renderShell(); };
+    btn.onclick=async (e)=>{ const card=e.target.closest('[data-id]'); const id=card.dataset.id; const c=staff.find(s=>s.id===id); if(!confirm(`Remover ${c.nome} deste evento?`)) return; staff=staff.filter(s=>s.id!==id); await saveStaff(); renderShell(); };
   });
 }
 function renderPresencaTab(){
@@ -2801,60 +2943,111 @@ function renderCheckoutDiasLista(){
   const grupos=agruparPorFuncaoPrincipal(escaladosFiltrados, p=>p.funcao, p=>p.nome);
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
-    <table>
-      <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th>Situação</th><th></th></tr></thead>
-      <tbody>
-        ${linhasComTituloDeGrupo(grupos, 9, (p,numero)=>{
-          const pr=presencaDoDia(pid(p), diaId);
+    <div class="desktop-table">
+      <table>
+        <thead><tr><th>#</th><th>Colaborador</th><th>Função</th><th>Telefone</th><th>Entrada</th><th>Saída</th><th>Horas adicionais</th><th>Situação</th><th></th></tr></thead>
+        <tbody>
+          ${linhasComTituloDeGrupo(grupos, 9, (p,numero)=>{
+            const pr=presencaDoDia(pid(p), diaId);
+            const temEntrada=pr && pr.entrada_ts;
+            const temSaida=pr && pr.saida_ts;
+            const anulada=!!p.anulada;
+            return `<tr data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>
+              <td class="mono">${numero}</td>
+              <td>${escapeHtml(nomeExibicao(p.nome))}</td>
+              <td>${escapeHtml(p.funcao||'—')}</td>
+              <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
+              <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+              <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
+              <td class="mono">${horasExtraDe(pr)!=null ? horasExtraDe(pr)+'h' : (temSaida?'não informado':'—')}</td>
+              <td>${anulada?'<span class="badge" style="color:var(--red);border-color:var(--red);">🔴 PARTICIPAÇÃO ANULADA</span>':(temEntrada?'<span class="badge pago">Válido</span>':'—')}</td>
+              <td>
+                ${!anulada && !temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
+                ${!anulada && temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
+                ${!anulada && temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
+                  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+                    <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
+                    <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
+                    <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
+                  </div>` : ''}
+                ${!anulada && temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
+                  <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
+                    <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
+                  </div>` : ''}
+                ${!anulada && temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+                ${!anulada && temEntrada && eventoAberto ? `<button class="btn btn-danger btn-sm btn-anular-participacao" style="margin-top:4px;">Anular participação</button>` : ''}
+                ${anulada && eventoAberto ? `<button class="btn btn-ghost btn-sm btn-restaurar-participacao" style="margin-top:4px;">Restaurar participação</button>` : ''}
+                ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;">Evento finalizado — situação travada</div>` : ''}
+              </td>
+            </tr>`;
+          })}
+        </tbody>
+      </table>
+    </div>
+    <div class="mobile-card-list">
+      <div class="mobile-day-summary">
+        <span class="mobile-summary-chip">Dia: ${escapeHtml(formatDate(eventoDias.find(d=>d.id===diaId)?.data||''))}</span>
+        <span class="mobile-summary-chip">Total: ${escaladosNoDia.length}</span>
+        <span class="mobile-summary-chip">Presentes: ${escaladosNoDia.filter(p=>{const pr=presencaDoDia(pid(p),diaId); return pr&&pr.entrada_ts;}).length}</span>
+      </div>
+      ${grupos.map(g=>`
+        <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+        ${g.itens.map(p=>{
+          const pr=presencaDoDia(pid(p),diaId);
           const temEntrada=pr && pr.entrada_ts;
           const temSaida=pr && pr.saida_ts;
           const anulada=!!p.anulada;
-          return `<tr data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>
-            <td class="mono">${numero}</td>
-            <td>${escapeHtml(nomeExibicao(p.nome))}</td>
-            <td>${escapeHtml(p.funcao||'—')}</td>
-            <td class="mono">${p.telefone?`<a href="tel:${escapeHtml(p.telefone)}" style="color:inherit;">${escapeHtml(formatTelefone(p.telefone))}</a>`:'—'}</td>
-            <td class="mono">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
-            <td class="mono">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</td>
-            <td class="mono">${horasExtraDe(pr)!=null ? horasExtraDe(pr)+'h' : (temSaida?'não informado':'—')}</td>
-            <td>${anulada?'<span class="badge" style="color:var(--red);border-color:var(--red);">🔴 PARTICIPAÇÃO ANULADA</span>':(temEntrada?'<span class="badge pago">Válido</span>':'—')}</td>
-            <td>
-              ${!anulada && !temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
-              ${!anulada && temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
-              ${!anulada && temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
-                <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                  <span style="font-size:12px;color:var(--muted);">Fez hora extra?</span>
-                  <button class="btn btn-teal btn-sm btn-hora-extra-sim">Sim</button>
-                  <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Não</button>
-                </div>` : ''}
-              ${!anulada && temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
-                <div style="display:flex;align-items:center;gap:6px;">
-                  <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:64px;" placeholder="0">
-                  <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>
-                </div>` : ''}
-              ${!anulada && temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
-              ${!anulada && temEntrada && eventoAberto ? `<button class="btn btn-danger btn-sm btn-anular-participacao" style="margin-top:4px;">Anular participação</button>` : ''}
-              ${anulada && eventoAberto ? `<button class="btn btn-ghost btn-sm btn-restaurar-participacao" style="margin-top:4px;">Restaurar participação</button>` : ''}
-              ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--muted);margin-top:4px;">Evento finalizado — situação travada</div>` : ''}
-            </td>
-          </tr>`;
-        })}
-      </tbody>
-    </table>
+          return `
+            <div class="mobile-person-card" data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>
+              <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(p.nome))}</div>
+              <div class="mobile-person-main">
+                <div class="mobile-person-name">${escapeHtml(nomeExibicao(p.nome)||'—')}</div>
+                <div class="mobile-person-role">${escapeHtml(p.funcao||'—')}</div>
+                <div class="mobile-person-meta">
+                  CPF: <span class="mono">${escapeHtml(p.cpf||'—')}</span><br>
+                  Entrada: <span class="mobile-checkout-time">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</span>
+                  &nbsp; · &nbsp;
+                  Saída: <span class="mobile-checkout-time">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</span>
+                </div>
+                <div class="mobile-person-status">
+                  ${anulada?'<span class="badge" style="color:var(--red);border-color:var(--red);">🔴 PARTICIPAÇÃO ANULADA</span>':(temEntrada?'<span class="badge pago">✓ PRESENTE</span>':'<span class="badge pendente">PENDENTE</span>')}
+                  ${temSaida ? `<span class="badge">${horasExtraDe(pr)!=null ? 'Hora extra: '+horasExtraDe(pr)+'h' : 'Hora extra: não informada'}</span>` : ''}
+                </div>
+                <div class="mobile-person-actions">
+                  ${!anulada && !temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
+                  ${!anulada && temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
+                  ${!anulada && temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
+                    <button class="btn btn-teal btn-sm btn-hora-extra-sim">Hora extra: Sim</button>
+                    <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Hora extra: Não</button>` : ''}
+                  ${!anulada && temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
+                    <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:90px;" placeholder="Horas">
+                    <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>` : ''}
+                  ${!anulada && temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+                  ${!anulada && temEntrada && eventoAberto ? `<button class="btn btn-danger btn-sm btn-anular-participacao">Anular participação</button>` : ''}
+                  ${anulada && eventoAberto ? `<button class="btn btn-ghost btn-sm btn-restaurar-participacao">Restaurar participação</button>` : ''}
+                </div>
+                ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">Evento finalizado — situação travada</div>` : ''}
+              </div>
+              <div class="mobile-card-arrow">›</div>
+            </div>`;
+        }).join('')}
+      `).join('')}
+    </div>
   `;
 }
 let horasExtraAguardandoQtd = new Set(); // ids (pid) com o campo de quantidade aberto na tela, transitório
 function attachCheckoutListaHandlers(){
   document.querySelectorAll('.btn-entrada').forEach(btn=>{
     btn.onclick=async ()=>{
-      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       const r=await chamarRpcGestor('registrar_entrada_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
       if(r.ok){ showToast('Entrada registrada.'); await loadDiasEscalaPresenca(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-saida').forEach(btn=>{
     btn.onclick=async ()=>{
-      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       const r=await chamarRpcGestor('registrar_saida_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
       if(!r.ok) return;
       showToast('Saída registrada.');
@@ -2866,28 +3059,28 @@ function attachCheckoutListaHandlers(){
   });
   document.querySelectorAll('.btn-hora-extra-nao').forEach(btn=>{
     btn.onclick=async ()=>{
-      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       const r=await chamarRpcGestor('registrar_horas_extra',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca, p_horas_extra:0});
       if(r.ok){ showToast('Sem hora extra registrada.'); await loadDiasEscalaPresenca(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-hora-extra-sim').forEach(btn=>{
     btn.onclick=()=>{
-      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       horasExtraAguardandoQtd.add(participacaoId);
       renderShell();
     };
   });
   document.querySelectorAll('.btn-corrigir-hora-extra').forEach(btn=>{
     btn.onclick=()=>{
-      const participacaoId=Number(btn.closest('tr').dataset.participacaoId);
+      const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       horasExtraAguardandoQtd.add(participacaoId);
       renderShell();
     };
   });
   document.querySelectorAll('.btn-confirmar-hora-extra').forEach(btn=>{
     btn.onclick=async ()=>{
-      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const tr=btn.closest('[data-participacao-id]'); const participacaoId=Number(tr.dataset.participacaoId);
       const input=tr.querySelector('.input-qtd-hora-extra');
       const valor=input.value.trim();
       const horas=parseInt(valor,10);
@@ -2905,7 +3098,7 @@ function attachCheckoutListaHandlers(){
   });
   document.querySelectorAll('.btn-anular-participacao').forEach(btn=>{
     btn.onclick=()=>{
-      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const tr=btn.closest('[data-participacao-id]'); const participacaoId=Number(tr.dataset.participacaoId);
       const p=participacoesNovas.find(x=>pid(x)===participacaoId);
       const pr=presencaDoDia(participacaoId, diaSelecionadoPresenca);
       abrirModalAnularParticipacao(p, pr);
@@ -2913,7 +3106,7 @@ function attachCheckoutListaHandlers(){
   });
   document.querySelectorAll('.btn-restaurar-participacao').forEach(btn=>{
     btn.onclick=async ()=>{
-      const tr=btn.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId);
+      const tr=btn.closest('[data-participacao-id]'); const participacaoId=Number(tr.dataset.participacaoId);
       if(!confirm('Restaurar esta participação? Ela voltará a ser considerada válida e entrará novamente no fechamento financeiro.')) return;
       const r=await chamarRpcGestor('restaurar_participacao_evento',{p_participacao_id:participacaoId});
       if(r.ok){ showToast('Participação restaurada.'); await loadDiasEscalaPresenca(); renderShell(); }
@@ -3972,7 +4165,7 @@ function attachBancoColaboradoresHandlers(){
 function attachColaboradoresBancoListaHandlers(){
   document.querySelectorAll('.btn-editar-colaborador-banco').forEach(btn=>{
     btn.onclick=()=>{
-      const cpf=btn.closest('tr').dataset.cpf;
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
       abrirFormularioColaboradorBanco(buscarColaboradorPorCpf(cpf));
     };
   });
@@ -4631,6 +4824,12 @@ function attachImpressaoCrachasHandlers(){
    existente em CPFs Autorizados/Banco de Colaboradores: ignora
    maiúsculas/minúsculas e pontuação, localiza parte do nome ou do
    CPF. Só filtra a exibição — nunca altera o array original. */
+function iniciaisNome(nome){
+  const partes=(nomeExibicao(nome)||'').trim().split(/\s+/).filter(Boolean);
+  if(!partes.length) return '👤';
+  if(partes.length===1) return partes[0].slice(0,2).toUpperCase();
+  return (partes[0][0]+partes[partes.length-1][0]).toUpperCase();
+}
 function filtrarPorNomeOuCpf(lista, busca, getNome, getCpf){
   const termo=(busca||'').trim();
   if(!termo) return lista;
@@ -4661,26 +4860,55 @@ function renderCpfsAutorizadosLista(lista){
   const grupos=agruparPorFuncaoPrincipal(lista, c=>c.funcao, c=>c.nome);
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
-    <table>
-      <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
-      <tbody>
-        ${linhasComTituloDeGrupo(grupos, 6, (c,numero)=>`
-          <tr data-cpf="${c.cpf}" class="${c.cadastro_concluido?'linha-cadastro-concluido':''}">
-            <td class="mono">${numero}</td>
-            <td class="mono">${formatCpf(c.cpf)}</td>
-            <td>${escapeHtml(nomeExibicao(c.nome)||'—')}${c.cadastro_concluido?' <span class="badge pago" style="margin-left:4px;">Cadastro concluído</span>':''}</td>
-            <td>${escapeHtml(c.funcao||'—')}</td>
-            <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
-            <td>
-              <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
-              ${c.autorizado
-                ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
-                : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
-              <button class="btn btn-danger btn-sm btn-excluir-cpf-aut">Excluir cadastro</button>
-            </td>
-          </tr>`)}
-      </tbody>
-    </table>
+    <div class="desktop-table">
+      <table>
+        <thead><tr><th>#</th><th>CPF</th><th>Colaborador</th><th>Função</th><th>Status</th><th></th></tr></thead>
+        <tbody>
+          ${linhasComTituloDeGrupo(grupos, 6, (c,numero)=>`
+            <tr data-cpf="${c.cpf}" class="${c.cadastro_concluido?'linha-cadastro-concluido':''}">
+              <td class="mono">${numero}</td>
+              <td class="mono">${formatCpf(c.cpf)}</td>
+              <td>${escapeHtml(nomeExibicao(c.nome)||'—')}${c.cadastro_concluido?' <span class="badge pago" style="margin-left:4px;">Cadastro concluído</span>':''}</td>
+              <td>${escapeHtml(c.funcao||'—')}</td>
+              <td><span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'Autorizado':'Desautorizado'}</span></td>
+              <td>
+                <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
+                ${c.autorizado
+                  ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
+                  : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
+                <button class="btn btn-danger btn-sm btn-excluir-cpf-aut">Excluir cadastro</button>
+              </td>
+            </tr>`)}
+        </tbody>
+      </table>
+    </div>
+    <div class="mobile-card-list">
+      ${grupos.map(g=>`
+        <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+        ${g.itens.map(c=>`
+          <div class="mobile-person-card" data-cpf="${c.cpf}">
+            <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(c.nome))}</div>
+            <div class="mobile-person-main">
+              <div class="mobile-person-name">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
+              <div class="mobile-person-role">${escapeHtml(c.funcao||'—')}</div>
+              <div class="mobile-person-meta">CPF: <span class="mono">${formatCpf(c.cpf)}</span></div>
+              <div class="mobile-person-status">
+                <span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'🟢 AUTORIZADO':'🔴 DESAUTORIZADO'}</span>
+                ${c.cadastro_concluido ? '<span class="badge pago">Cadastro concluído</span>' : ''}
+              </div>
+              <div class="mobile-person-actions">
+                <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
+                ${c.autorizado
+                  ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
+                  : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
+                <button class="btn btn-danger btn-sm btn-excluir-cpf-aut">Excluir</button>
+              </div>
+            </div>
+            <div class="mobile-card-arrow">›</div>
+          </div>
+        `).join('')}
+      `).join('')}
+    </div>
   `;
 }
 function renderCpfsAutorizadosTab(){
@@ -4803,7 +5031,7 @@ function attachCpfsAutorizadosHandlers(){
 function attachCpfsAutorizadosRowHandlers(){
   document.querySelectorAll('.btn-editar-cpf-aut').forEach(btn=>{
     btn.onclick=async ()=>{
-      const cpf=btn.closest('tr').dataset.cpf;
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
       const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
       const novoNomeDigitado=prompt('Nome:', atual.nome||'');
       if(novoNomeDigitado===null) return;
@@ -4820,7 +5048,7 @@ function attachCpfsAutorizadosRowHandlers(){
   });
   document.querySelectorAll('.btn-desautorizar').forEach(btn=>{
     btn.onclick=async ()=>{
-      const cpf=btn.closest('tr').dataset.cpf;
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
       if(!confirm(`Desautorizar o CPF ${formatCpf(cpf)} neste evento? Ele não conseguirá mais confirmar participação, a menos que seja reativado depois.`)) return;
       const r=await chamarRpcGestor('desautorizar_cpf_evento',{p_evento_id:currentEventId, p_cpf:cpf});
       if(r.ok){ showToast('CPF desautorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
@@ -4828,14 +5056,14 @@ function attachCpfsAutorizadosRowHandlers(){
   });
   document.querySelectorAll('.btn-reativar').forEach(btn=>{
     btn.onclick=async ()=>{
-      const cpf=btn.closest('tr').dataset.cpf;
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
       const r=await chamarRpcGestor('upsert_cpf_autorizado',{p_evento_id:currentEventId, p_cpf:cpf, p_nome:null, p_funcao:null});
       if(r.ok){ showToast('CPF reativado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-excluir-cpf-aut').forEach(btn=>{
     btn.onclick=async ()=>{
-      const cpf=btn.closest('tr').dataset.cpf;
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
       const atual=cpfsAutorizadosLista.find(c=>c.cpf===cpf);
       /* Exclusão completa e em cascata (CPF Autorizado + Pré-Escala +
          Escala Oficial + Escala por Dia, e também Banco de
