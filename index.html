@@ -115,6 +115,44 @@
     .main{padding:18px 16px 60px;}
     .overlay{display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:50;}
     .overlay.show{display:block;}
+
+    /* ===== ETAPA 2 — BASE MOBILE (aditivo, só dentro deste breakpoint;
+       desktop/tablet permanecem exatamente como já eram) =====
+
+       TOQUE: campos/botões ganham altura mínima confortável (~44px)
+       só em telas pequenas — no desktop continuam do tamanho atual. */
+    select,input,button,textarea{padding:12px 13px; font-size:16px;} /* 16px evita zoom automático do iOS ao focar campos */
+    .btn{min-height:44px; padding:11px 16px;}
+    .btn-sm{min-height:38px; padding:9px 14px;}
+    .mobile-topbar .btn{min-height:38px; padding:8px 12px;}
+
+    /* FORMULÁRIOS: campos ocupam a largura toda do container em vez
+       de ficarem lado a lado espremidos — mesmas labels, mesmas
+       validações, mesmos ids; só a apresentação muda. */
+    .field{width:100%;}
+    .field input,.field select{min-width:0; width:100%;}
+    .add-row{flex-direction:column; align-items:stretch !important;}
+    .add-row .field{width:100%;}
+    .modal-box{padding:18px; max-width:100%; width:calc(100% - 20px);}
+
+    /* TABELAS: cada tabela vira seu próprio contêiner de rolagem
+       horizontal — a página nunca rola de lado, mas nenhuma coluna ou
+       dado é escondido/removido. Conversão em cards por tela específica
+       fica para as próximas etapas (Dashboard, Escala Oficial etc.),
+       como já definido no escopo desta rodada; aqui é a rede de
+       segurança geral para todas as tabelas do sistema de uma vez,
+       sem precisar alterar HTML/JS de cada tela individualmente. */
+    table{display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; white-space:nowrap;}
+    thead,tbody{display:table; width:100%;}
+
+    /* Abas internas (CPF Autorizado, Pré-Escala, Banco de Colaboradores
+       etc.) já quebram linha (flex-wrap já existia) — só um toque
+       mais confortável aqui; a navegação específica de cada tela fica
+       para as próximas etapas, como já combinado. */
+    .subtab{padding:12px 14px; font-size:13.5px;}
+
+    /* CARDS já existentes (.event-card, .stat-grid) preservados —
+       ajustes deles já existiam antes desta etapa, não foram tocados. */
   }
 
   /* ---------- dashboard ---------- */
