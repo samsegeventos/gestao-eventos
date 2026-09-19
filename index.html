@@ -308,7 +308,10 @@
        pré-visualização em tela ocupando o espaço disponível sem
        aplicar a proporção física do papel, e a impressão exatamente
        como já era — A4 paisagem, mesmas larguras calculadas. */
-    .tabela-fechamento-datas{width:var(--tabela-largura-mm, 100%) !important;} /* fallback 100% — nunca afeta a outra tabela (resumo por função), que não define essa variável */
+    /* CORREÇÃO DE IMPRESSÃO: a tabela ocupa 100% da largura útil do A4.
+       As colunas já têm larguras percentuais no <colgroup>, evitando
+       que o navegador use uma grade para o cabeçalho e outra para o corpo. */
+    .tabela-fechamento-datas{width:100% !important; max-width:100% !important; table-layout:fixed !important;}
     .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#d6d6d6 !important; color:#1a1a1a !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2 !important;}
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
@@ -351,7 +354,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 10:00';
+const APP_VERSION = '19/09/2026 10:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3241,9 +3244,15 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       ? [22,16,23,18,16,16,22, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VAL/FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR, ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
       : [26,20,27,22,19,19,26];
     const larguraTabelaMm=[...antesMm, ...depoisMm].reduce((s,v)=>s+v,0);
+    /* CORREÇÃO DE IMPRESSÃO — as colunas passam a ser definidas em
+       percentual da própria tabela. Isso evita que o mecanismo de
+       impressão do navegador recalcule larguras em mm de forma
+       diferente entre a pré-visualização e o PDF salvo. A proporção
+       física continua exatamente a mesma (277 mm úteis no A4 paisagem). */
+    const largurasTodas=[...antesMm, ...depoisMm];
+    const totalMm=largurasTodas.reduce((s,v)=>s+v,0);
     const html=`<colgroup>
-      ${antesMm.map(w=>`<col style="width:${w}mm">`).join('')}
-      ${depoisMm.map(w=>`<col style="width:${w}mm">`).join('')}
+      ${largurasTodas.map(w=>`<col style="width:${((w/totalMm)*100).toFixed(6)}%;">`).join('')}
     </colgroup>`;
     return {html, larguraTabelaMm, larguraDiasTrabMm:depoisMm[2]};
   })();
@@ -3387,6 +3396,51 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     </div>
   `;
 }
+function nomeArquivoFechamentoEvento(ev){
+  if(!ev) return 'FECHAMENTO_EVENTO';
+  const dataInicial=ev.data||'';
+  const dataFinal=ev.dataFim||ev.data||'';
+  const [,mes,di]=dataInicial.split('-');
+  const [,mesFim,df]=dataFinal.split('-');
+  const ano=dataInicial.split('-')[0]||new Date().getFullYear();
+  const mesNome=MESES_PT[Number(mes)-1]||'';
+  const periodo=(dataFinal && dataFinal!==dataInicial)
+    ? `${di}A${df}`
+    : `${di||''}`;
+
+  /* Nome do evento: remove acentos e caracteres problemáticos,
+     mas PRESERVA os espaços entre as palavras.
+     O "_" é usado somente para separar período, mês, evento e ano. */
+  const nomeEvento=String(ev.evento||'EVENTO')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^A-Za-z0-9À-ÿ ]+/g,' ')
+    .replace(/\s+/g,' ')
+    .trim()
+    .toUpperCase() || 'EVENTO';
+
+  /* Padrão solicitado:
+     11A13_SETEMBRO_BAILAO SERTANEJO_2026
+     Sem "EX" no início e sem "_" entre as palavras do evento. */
+  return `${periodo}_${mesNome}_${nomeEvento}_${ano}`;
+}
+
+function imprimirFechamentoEvento(){
+  const ev=currentEvent();
+  const tituloAnterior=document.title;
+  const nomeArquivo=nomeArquivoFechamentoEvento(ev);
+  /* O navegador usa o título do documento como nome sugerido no
+     diálogo 'Salvar como PDF' na maioria dos navegadores. O título é
+     restaurado depois da impressão para não afetar o sistema. */
+  document.title=nomeArquivo;
+  const restaurarTitulo=()=>{
+    document.title=tituloAnterior;
+    window.removeEventListener('afterprint',restaurarTitulo);
+  };
+  window.addEventListener('afterprint',restaurarTitulo);
+  window.print();
+  setTimeout(()=>{ if(document.title===nomeArquivo) restaurarTitulo(); },10000);
+}
+
 function attachFechamentoHandlers(){
   const btnCol=document.getElementById('btnVisaoColaborador');
   const btnFunc=document.getElementById('btnVisaoFuncao');
@@ -5228,7 +5282,7 @@ function attachDetailHandlers(){
   const btnPrint=document.getElementById('btnPrint');
   if(btnPrint) btnPrint.onclick=()=>window.print();
   const btnPrintFechamentoEvento=document.getElementById('btnPrintFechamentoEvento');
-  if(btnPrintFechamentoEvento) btnPrintFechamentoEvento.onclick=()=>window.print();
+  if(btnPrintFechamentoEvento) btnPrintFechamentoEvento.onclick=imprimirFechamentoEvento;
   const btnAprovar=document.getElementById('btnAprovar');
   if(btnAprovar) btnAprovar.onclick=async ()=>{
     if(!confirm('Confirma o fechamento da equipe? Após aprovar, o evento fica disponível na área de Pagamentos.')) return;
