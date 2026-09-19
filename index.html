@@ -4880,6 +4880,39 @@ function attachDetailHandlers(){
       }
     }
 
+    /* NOVO NESTA RODADA — mesmo padrão já aprovado e implementado na
+       aba CPF Autorizado: antes de cadastrar, consulta (só
+       informativa) se este CPF já possui alguma escala efetiva em
+       OUTRO evento, em qualquer um dos dias do evento atual
+       (eventoDias, estrutura já existente). Uma chamada por dia, em
+       paralelo (Promise.all). Erro em qualquer uma interrompe sem
+       cadastrar (nunca trata erro como "sem conflito"). */
+    let resultadosPorDiaStaff;
+    try{
+      resultadosPorDiaStaff=await Promise.all(
+        eventoDias.map(d=>sb.rpc('verificar_conflito_cpf_dia',{p_cpf:cpfLimpo, p_evento_id:currentEventId, p_data:d.data}))
+      );
+    }catch(errConflitoStaff){
+      console.error('Falha ao verificar conflito de escala:', errConflitoStaff);
+      showToast('Não foi possível verificar conflito de escala em outro evento. Tente novamente.');
+      return;
+    }
+    const erroConflitoStaff=resultadosPorDiaStaff.find(r=>r.error);
+    if(erroConflitoStaff){
+      console.error('Falha ao verificar conflito de escala:', erroConflitoStaff.error);
+      showToast('Não foi possível verificar conflito de escala em outro evento. Tente novamente.');
+      return;
+    }
+    const conflitosStaff=resultadosPorDiaStaff.flatMap(r=>r.data||[]);
+
+    if(conflitosStaff.length){
+      const msgStaff = '⚠️ ATENÇÃO — COLABORADOR JÁ ESCALADO EM OUTRO EVENTO\n\n'
+        + `Colaborador: ${nome||'—'}\nCPF: ${cpfLimpo}\nFunção: ${funcao}\n\n`
+        + 'Outras escalas encontradas:\n\n'
+        + conflitosStaff.map(c=>`Evento: ${c.outro_evento||c.outro_evento_id}\nData: ${formatDate(c.data)}\nHorário: ${(c.hora_inicio||'').slice(0,5)} às ${(c.hora_fim||'').slice(0,5)}\nFunção: ${c.funcao}\n`).join('\n');
+      if(!confirm(msgStaff)) return;
+    }
+
     btnAdd.disabled=true; btnAdd.textContent='Cadastrando...';
     try{
       /* PASSO 3 — Banco de Colaboradores. Cadastro MANUAL usa a RPC
