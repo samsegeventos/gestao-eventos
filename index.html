@@ -291,7 +291,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 09:15';
+const APP_VERSION = '19/09/2026 09:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3147,7 +3147,10 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
      FUNÇÃO, [CPF], VALOR P/ FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR ADIC.,
      DESC., TOTAL, [ASSINATURA, DATA] — 6 colunas sempre presentes
      (valor/ndias/diastrab/adic/desc/total) + as condicionais. */
-  const colspanDatas=(mostrarCpf?3:2)+6+(mostrarAssinaturaData?2:0);
+  /* CORRIGIDO NESTA RODADA — voltou a coluna VALOR (valor_base),
+     agora são 7 colunas sempre presentes (VAL/FUNÇÃO, Nº DIAS, DIAS
+     TRAB., VALOR, ADIC., DESC., TOTAL) + as condicionais. */
+  const colspanDatas=(mostrarCpf?3:2)+7+(mostrarAssinaturaData?2:0);
   const cabecalhoRepetido=()=>`
     <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
@@ -3157,26 +3160,21 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     </th></tr>`;
 
   const colgroupInfo=(()=>{
-    /* SOLUÇÃO ESTRUTURAL DESTA RODADA — não existe mais uma coluna por
-       dia do evento. Agora há UMA ÚNICA coluna "DIAS TRAB." que lista
-       todos os dias trabalhados (com horas extras entre parênteses),
-       igual para eventos de 1 ou de 30 dias — estrutura fixa, sempre
-       11 colunas (9 quando mostrarCpf/mostrarAssinaturaData=false),
-       sempre cabendo dentro da largura útil do A4 paisagem (277mm —
-       confirmado no @page desta impressão), como pedido: a tabela
-       nunca fica mais larga que a página. Como o comprimento da lista
-       de dias varia por pessoa (nem todo mundo trabalha os mesmos
-       dias), a fonte de cada tabela (por grupo de função) é calculada
-       para caber a lista MAIS LONGA daquele grupo sem quebrar — ver
-       cálculo de fontePx dentro de gerarTabelaFuncao. ASSINATURA/DATA
-       continuam na MESMA PROPORÇÃO física de sempre (15%/7% de
-       277mm). VALOR P/FUNÇÃO/VALOR ADIC./DESC./TOTAL mantêm o padding
-       extra (.col-financeira-fechamento) para não ficarem emboladas. */
+    /* REDISTRIBUÍDO NESTA RODADA — 12 colunas agora (voltou a coluna
+       VALOR = valor_base, que tinha sido removida por engano na
+       reestruturação anterior, deixando só VAL/FUNÇÃO = valor_diaria).
+       Larguras revisadas para reduzir o espaço em branco excessivo
+       relatado (CPF/FUNÇÃO/financeiras estavam com folga demais) e
+       dar mais espaço a NOME (para caber inteiro sem quebrar quando
+       possível). ASSINATURA (15%) e DATA (7%) continuam exatamente
+       na mesma proporção física de sempre — não tocadas. Soma exata
+       das colunas fixas + DIAS TRAB. = 277mm (largura útil do A4
+       paisagem), a tabela nunca ultrapassa a página. */
     const LARGURA_UTIL_MM=277; // A4 paisagem (297mm) menos 10mm de margem de cada lado
-    const antesMm = mostrarCpf ? [30,22,26] : [42,32]; // NOME (único que quebra), FUNÇÃO, CPF
+    const antesMm = mostrarCpf ? [36,20,23] : [46,30]; // NOME, FUNÇÃO, CPF
     const depoisMm = mostrarAssinaturaData
-      ? [20,12,50,18,18,20, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VALOR P/FUNÇÃO, Nº DIAS, DIAS TRAB., ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
-      : [24,14,60,21,21,24];
+      ? [18,12,39,18,16,16,18, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VAL/FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR, ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
+      : [22,14,47,22,19,19,22];
     const larguraTabelaMm=[...antesMm, ...depoisMm].reduce((s,v)=>s+v,0);
     const html=`<colgroup>
       ${antesMm.map(w=>`<col style="width:${w}mm">`).join('')}
@@ -3243,6 +3241,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
         <td class="col-financeira-fechamento">${f.valor_diaria!=null?brl(f.valor_diaria):'—'}</td>
         <td>${f.dias_trabalhados}</td>
         <td class="col-dias-trab">${escapeHtml(diasTrabTextoPorPessoa[i])}</td>
+        <td class="col-financeira-fechamento">${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
         <td class="col-financeira-fechamento">${valorOuTraco(f.valor_excedente)}</td>
         <td class="col-financeira-fechamento">${valorOuTraco(f.desconto)}</td>
         <td class="col-financeira-fechamento">${brl(f.total_receber)}</td>
@@ -3252,7 +3251,6 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
 
     return `
       <div class="folha-fechamento bloco-funcao-fechamento" style="page-break-inside:avoid;">
-        <div class="card-title" style="margin-bottom:6px;">${escapeHtml(grupo.funcao)}</div>
         <table class="tabela-fechamento-datas" style="font-size:${fontePx}px; width:${colgroupInfo.larguraTabelaMm.toFixed(2)}mm;">
           ${colgroup}
           <thead>
@@ -3261,10 +3259,11 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
               <th class="col-nome">NOME</th>
               <th class="col-func-presidencia">FUNÇÃO</th>
               ${mostrarCpf?'<th>CPF</th>':''}
-              <th class="col-financeira-fechamento">VALOR P/ FUNÇÃO</th>
+              <th class="col-financeira-fechamento">VAL/FUNÇÃO</th>
               <th>Nº DIAS</th>
               <th class="col-dias-trab">DIAS TRAB.</th>
-              <th class="col-financeira-fechamento">VALOR ADIC.</th>
+              <th class="col-financeira-fechamento">VALOR</th>
+              <th class="col-financeira-fechamento">ADIC.</th>
               <th class="col-financeira-fechamento">DESC.</th>
               <th class="col-financeira-fechamento">TOTAL</th>
               ${mostrarAssinaturaData?'<th class="col-assinatura">ASSINATURA</th><th class="col-data-manual">DATA</th>':''}
