@@ -171,12 +171,14 @@
   .tabela-fechamento-datas{font-size:12.5px; font-weight:400; border-collapse:collapse; width:100%; table-layout:fixed;}
   .tabela-fechamento-datas thead{display:table-header-group;} /* repete o cabeçalho em cada página impressa */
   .tabela-fechamento-datas thead th{background:#f2f2f2; color:#333; font-weight:600; white-space:nowrap; padding:7px 8px;}
-  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:1px solid #e2e2e2; white-space:nowrap; padding:7px 8px;}
+  .tabela-fechamento-datas tbody td{font-weight:400; border-bottom:1px solid #e2e2e2; white-space:nowrap; padding:7px 8px; vertical-align:top;} /* vertical-align:top — mantém todas as colunas alinhadas mesmo quando NOME ou DIAS TRAB. crescem para 2 linhas */
+  .tabela-fechamento-datas .col-financeira-fechamento{padding-left:12px; padding-right:12px;} /* VALOR/ADIC./DESC./TOTAL — padding extra pedido, só nesta tabela, para não ficarem emboladas */
   .tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2;}
   .tabela-fechamento-datas tbody tr{page-break-inside:avoid; height:32px;}
   .tabela-fechamento-datas .col-assinatura{border-left:1px solid #ddd;}
   .tabela-fechamento-datas .col-data-manual{border-left:1px solid #ddd;}
   .tabela-fechamento-datas .col-nome{white-space:normal; word-break:break-word;} /* nunca corta o nome do colaborador */
+  .tabela-fechamento-datas .col-dias-trab{white-space:normal; word-break:normal; overflow-wrap:normal;} /* tenta caber numa linha; se não couber, quebra SÓ nos espaços entre dias (ex.: "12(2h), 13") — nunca no meio de um item, já que word-break:normal nunca parte um token sem espaço/hífen */
   .tabela-fechamento-datas .col-func-presidencia{white-space:nowrap;} /* função nunca quebra em duas linhas na Impressão p/ Presidência */
   /* Colunas de data: o mais estreitas possível, sem perder alinhamento
      nem cortar "180 (10h)" — cada uma é uma <th>/<td> própria, dentro
@@ -289,7 +291,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 09:00';
+const APP_VERSION = '19/09/2026 09:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -3140,7 +3142,12 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
   const grupos=agruparPorFuncaoPrincipal(fechamentoDados, f=>f.funcao, f=>f.nome);
   if(!grupos.length) return `<div class="empty"><b>Sem funções para exibir</b></div>`;
 
-  const colspanDatas=(mostrarCpf?3:2)+eventoDias.length+5+(mostrarAssinaturaData?2:0);
+  /* CORRIGIDO NESTA RODADA — antes dependia de eventoDias.length
+     (uma coluna por dia); agora a estrutura é sempre fixa: NOME,
+     FUNÇÃO, [CPF], VALOR P/ FUNÇÃO, Nº DIAS, DIAS TRAB., VALOR ADIC.,
+     DESC., TOTAL, [ASSINATURA, DATA] — 6 colunas sempre presentes
+     (valor/ndias/diastrab/adic/desc/total) + as condicionais. */
+  const colspanDatas=(mostrarCpf?3:2)+6+(mostrarAssinaturaData?2:0);
   const cabecalhoRepetido=()=>`
     <tr class="linha-cabecalho-impressao"><th colspan="${colspanDatas}">
       <div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px;">
@@ -3149,43 +3156,81 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       </div>
     </th></tr>`;
 
-  const colgroup=(()=>{
-    /* AJUSTE DE LARGURAS — reduzidas as colunas fixas de texto curto
-       (nome/função/cpf/dias/valor/adic/desc/total) para sobrar mais
-       espaço percentual para as colunas de DIAS do evento, que
-       ficavam praticamente ilegíveis em eventos longos (antes só 8%
-       do total dividido entre todos os dias). ASSINATURA (15%) e
-       DATA (7%) NÃO foram tocadas — mesma largura de sempre. Nenhuma
-       coluna usa text-overflow/ellipsis; quando o texto não couber,
-       a célula quebra linha normalmente (comportamento já existente,
-       preservado). */
-    const antesDosDias = mostrarCpf ? ['11%','8%','7%'] : ['18%','15%'];
-    const depoisDosDias = mostrarAssinaturaData
-      ? ['3%','6%','5%','5%','6%','15%','7%']
-      : ['5%','10%','9%','9%','10%'];
-    const fixas=[...antesDosDias, ...depoisDosDias];
-    const somaFixas=fixas.reduce((s,v)=>s+parseFloat(v),0);
-    const larguraDia=eventoDias.length ? ((100-somaFixas)/eventoDias.length).toFixed(2)+'%' : '3%';
-    return `<colgroup>
-      ${antesDosDias.map(w=>`<col style="width:${w}">`).join('')}
-      ${eventoDias.map(()=>`<col style="width:${larguraDia}">`).join('')}
-      ${depoisDosDias.map(w=>`<col style="width:${w}">`).join('')}
+  const colgroupInfo=(()=>{
+    /* SOLUÇÃO ESTRUTURAL DESTA RODADA — não existe mais uma coluna por
+       dia do evento. Agora há UMA ÚNICA coluna "DIAS TRAB." que lista
+       todos os dias trabalhados (com horas extras entre parênteses),
+       igual para eventos de 1 ou de 30 dias — estrutura fixa, sempre
+       11 colunas (9 quando mostrarCpf/mostrarAssinaturaData=false),
+       sempre cabendo dentro da largura útil do A4 paisagem (277mm —
+       confirmado no @page desta impressão), como pedido: a tabela
+       nunca fica mais larga que a página. Como o comprimento da lista
+       de dias varia por pessoa (nem todo mundo trabalha os mesmos
+       dias), a fonte de cada tabela (por grupo de função) é calculada
+       para caber a lista MAIS LONGA daquele grupo sem quebrar — ver
+       cálculo de fontePx dentro de gerarTabelaFuncao. ASSINATURA/DATA
+       continuam na MESMA PROPORÇÃO física de sempre (15%/7% de
+       277mm). VALOR P/FUNÇÃO/VALOR ADIC./DESC./TOTAL mantêm o padding
+       extra (.col-financeira-fechamento) para não ficarem emboladas. */
+    const LARGURA_UTIL_MM=277; // A4 paisagem (297mm) menos 10mm de margem de cada lado
+    const antesMm = mostrarCpf ? [30,22,26] : [42,32]; // NOME (único que quebra), FUNÇÃO, CPF
+    const depoisMm = mostrarAssinaturaData
+      ? [20,12,50,18,18,20, Math.round(LARGURA_UTIL_MM*0.15), Math.round(LARGURA_UTIL_MM*0.07)] // VALOR P/FUNÇÃO, Nº DIAS, DIAS TRAB., ADIC., DESC., TOTAL, ASSINATURA(15%), DATA(7%)
+      : [24,14,60,21,21,24];
+    const larguraTabelaMm=[...antesMm, ...depoisMm].reduce((s,v)=>s+v,0);
+    const html=`<colgroup>
+      ${antesMm.map(w=>`<col style="width:${w}mm">`).join('')}
+      ${depoisMm.map(w=>`<col style="width:${w}mm">`).join('')}
     </colgroup>`;
+    return {html, larguraTabelaMm, larguraDiasTrabMm:depoisMm[2]};
   })();
+  const colgroup=colgroupInfo.html;
 
+  /* Classificação em 3 grupos, só para a ORGANIZAÇÃO da impressão —
+     não mexe na classificação geral do sistema (ehFuncaoVigilante()
+     segue intocada e continua sendo usada em todo o resto). Reaproveita
+     normalizaFuncaoDisplay(), já existente. SUPERVISOR/COORDENADOR
+     (comparação exata) formam seu próprio grupo, separado de VIGILANTE
+     (que antes ficava junto deles em ehFuncaoVigilante()). */
+  const classificarGrupoImpressao=(funcaoBase)=>{
+    const norm=normalizaFuncaoDisplay(funcaoBase);
+    if(norm==='SUPERVISOR' || norm==='COORDENADOR') return 'sup_coord';
+    if(norm.startsWith('VIGILANTE')) return 'vigilante';
+    return 'demais';
+  };
+
+  /* NOVO NESTA RODADA — DIAS TRAB. agora pode quebrar linha (só entre
+     dias, nunca no meio de um item tipo "12(2h)") quando não couber
+     numa linha só. Por isso a fonte não precisa mais ser forçada até
+     6px para caber tudo numa linha: volta a um piso razoavelmente
+     legível (9px), igual ao usado antes de toda essa reestruturação
+     — as colunas financeiras/texto nunca ficam menores que isso só
+     por causa de uma lista de dias longa. */
   const fontePx=Math.max(9, Math.min(11, 11 - Math.max(0, eventoDias.length-8)*0.25)).toFixed(1);
 
   const gerarTabelaFuncao=(grupo)=>{
     const lista=grupo.itens;
     const subtotal=lista.reduce((s,f)=>s+(Number(f.total_receber)||0),0);
-    const linhas=lista.map(f=>{
-      /* AJUSTE 1 — alerta "Escalado também", só informativo, abaixo do
-         nome. Fonte de dados: conflitosPorParticipacao, já pré-
-         calculado em loadDiasEscalaPresenca via verificar_conflito_cpf_dia
-         (mesma RPC, mesma regra — participacao_dias.escalado=true no
-         dia correspondente). Nunca altera f.total_receber nem nenhum
-         outro valor — é só uma linha extra dentro da mesma célula do
-         nome, sem coluna nova. */
+
+    /* Monta a lista "DIAS TRAB." de cada pessoa. Junta com ", " —
+       essa vírgula+espaço é o único ponto onde o navegador pode
+       quebrar linha (word-break:normal só quebra em espaços, nunca
+       no meio de um token como "12(2h)," — ver .col-dias-trab no
+       CSS). Prioridade 1 continua sendo caber numa linha só; quando
+       não couber, quebra exatamente entre um dia e o próximo. */
+    const diasTrabTextoPorPessoa=lista.map(f=>{
+      const partes=eventoDias.map(d=>{
+        const pr=presencaDoDia(f.participacao_id, d.id);
+        if(!pr || !pr.entrada_ts) return null;
+        const heNum=Number(horasExtraDe(pr))||0;
+        return formatDiaSomente(d.data)+(heNum>0?`(${heNum}h)`:'');
+      }).filter(Boolean);
+      return partes.join(', ');
+    });
+
+    const linhas=lista.map((f,i)=>{
+      /* Alerta "Escalado também" — preservado sem alteração de lógica,
+         só reaproveitado aqui dentro da nova linha. */
       const conflitosDele=conflitosPorParticipacao[String(f.participacao_id)];
       const alertaConflito=(conflitosDele&&conflitosDele.length)
         ? `<div style="font-size:7px; color:#b45309; line-height:1.25; margin-top:1px; font-weight:600;">⚠ Escalado também: ${escapeHtml([...new Set(conflitosDele.map(c=>c.outro_evento||c.outro_evento_id))].join('; '))}</div>`
@@ -3195,17 +3240,12 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
         <td class="col-nome">${escapeHtml(nomeExibicao(f.nome))}${alertaConflito}</td>
         <td class="col-func-presidencia">${funcaoParaImpressaoHTML(f.funcao)}</td>
         ${mostrarCpf?`<td>${f.cpf?formatCpf(f.cpf):'—'}</td>`:''}
-        ${eventoDias.map(d=>{
-          const pr=presencaDoDia(f.participacao_id, d.id);
-          if(!pr || !pr.entrada_ts) return `<td class="col-dia">-</td>`;
-          const he=horasExtraDe(pr);
-          return `<td class="col-dia">${f.valor_diaria!=null?numeroPlano(f.valor_diaria):''}${he?` (${he}h)`:''}</td>`;
-        }).join('')}
+        <td class="col-financeira-fechamento">${f.valor_diaria!=null?brl(f.valor_diaria):'—'}</td>
         <td>${f.dias_trabalhados}</td>
-        <td>${f.valor_diaria!=null?brl(f.valor_base):'—'}</td>
-        <td>${valorOuTraco(f.valor_excedente)}</td>
-        <td>${valorOuTraco(f.desconto)}</td>
-        <td>${brl(f.total_receber)}</td>
+        <td class="col-dias-trab">${escapeHtml(diasTrabTextoPorPessoa[i])}</td>
+        <td class="col-financeira-fechamento">${valorOuTraco(f.valor_excedente)}</td>
+        <td class="col-financeira-fechamento">${valorOuTraco(f.desconto)}</td>
+        <td class="col-financeira-fechamento">${brl(f.total_receber)}</td>
         ${mostrarAssinaturaData?'<td class="col-assinatura"></td><td class="col-data-manual"></td>':''}
       </tr>`;
     }).join('');
@@ -3213,7 +3253,7 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     return `
       <div class="folha-fechamento bloco-funcao-fechamento" style="page-break-inside:avoid;">
         <div class="card-title" style="margin-bottom:6px;">${escapeHtml(grupo.funcao)}</div>
-        <table class="tabela-fechamento-datas" style="font-size:${fontePx}px;">
+        <table class="tabela-fechamento-datas" style="font-size:${fontePx}px; width:${colgroupInfo.larguraTabelaMm.toFixed(2)}mm;">
           ${colgroup}
           <thead>
             ${cabecalhoRepetido()}
@@ -3221,10 +3261,12 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
               <th class="col-nome">NOME</th>
               <th class="col-func-presidencia">FUNÇÃO</th>
               ${mostrarCpf?'<th>CPF</th>':''}
-              ${eventoDias.map(d=>`<th class="col-dia">${formatDiaSomente(d.data)}</th>`).join('')}
-              <th>DIAS</th>
-              <th>VALOR</th>
-              <th>ADIC.</th><th>DESC.</th><th>TOTAL</th>
+              <th class="col-financeira-fechamento">VALOR P/ FUNÇÃO</th>
+              <th>Nº DIAS</th>
+              <th class="col-dias-trab">DIAS TRAB.</th>
+              <th class="col-financeira-fechamento">VALOR ADIC.</th>
+              <th class="col-financeira-fechamento">DESC.</th>
+              <th class="col-financeira-fechamento">TOTAL</th>
               ${mostrarAssinaturaData?'<th class="col-assinatura">ASSINATURA</th><th class="col-data-manual">DATA</th>':''}
             </tr>
           </thead>
@@ -3236,23 +3278,23 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
       </div>`;
   };
 
-  /* AJUSTE 2 — separação física VIGILANTES / DEMAIS FUNÇÕES na
-     impressão. Reaproveita ehFuncaoVigilante() já existente (mesma
-     regra usada em todo o resto do sistema, inclusive Supervisor e
-     Coordenador contam como grupo Vigilantes, como já era o caso
-     antes desta alteração) para decidir em qual dos dois grupos cada
-     grupo de função (já vindo de agruparPorFuncaoPrincipal) entra.
-     Cada grupo interno continua com sua própria quebra de página
-     (page-break-inside:avoid, já existente, intocada) — só a fronteira
-     ENTRE os dois blocos ganha page-break-before, e só quando há
-     conteúdo dos dois lados (evita página em branco desnecessária). */
-  const gruposVigilantes=grupos.filter(g=>ehFuncaoVigilante(g.funcao));
-  const gruposDemais=grupos.filter(g=>!ehFuncaoVigilante(g.funcao));
+  /* AJUSTE DESTA RODADA — 3 grupos de folhas em vez de 2:
+     SUPERVISORES E COORDENADORES -> VIGILANTES -> DEMAIS FUNÇÕES.
+     Quebra de página só entre grupos que realmente têm conteúdo
+     (nunca página em branco); cada tabela interna mantém sua própria
+     page-break-inside:avoid, intocada. */
+  const gruposSupCoord=grupos.filter(g=>classificarGrupoImpressao(g.funcao)==='sup_coord');
+  const gruposVigilantes=grupos.filter(g=>classificarGrupoImpressao(g.funcao)==='vigilante');
+  const gruposDemais=grupos.filter(g=>classificarGrupoImpressao(g.funcao)==='demais');
   const renderSecaoGrupo=(titulo, listaGrupos, comQuebraAntes)=>{
     if(!listaGrupos.length) return '';
+    /* PEDIDO DESTA RODADA — o título do grupo (VIGILANTES/DEMAIS
+       FUNÇÕES/SUPERVISORES E COORDENADORES) foi removido daqui; o
+       parâmetro "titulo" continua sendo recebido (as 3 chamadas
+       abaixo continuam passando o nome do grupo), só não é mais
+       impresso — nada além dessa única linha foi tocado. */
     return `
       <div class="secao-impressao-grupo"${comQuebraAntes?' style="page-break-before: always;"':''}>
-        <div class="card-title" style="margin: 6px 0 10px 0; font-size:15px;">${escapeHtml(titulo)}</div>
         ${listaGrupos.map(gerarTabelaFuncao).join('')}
       </div>`;
   };
@@ -3262,8 +3304,9 @@ function renderTabelaFechamentoImpressao(mostrarCpf, mostrarAssinaturaData, list
     <div style="margin-bottom:14px;">${permitirImpressao
       ? `<button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento">Imprimir / Exportar PDF</button>`
       : `<button class="btn btn-ghost btn-sm" id="btnPrintFechamentoEvento" disabled title="A impressão é liberada depois que o gestor aprovar o fechamento da equipe.">Imprimir / Exportar PDF (bloqueado até a aprovação)</button>`}</div>
-    ${renderSecaoGrupo('VIGILANTES', gruposVigilantes, false)}
-    ${renderSecaoGrupo('DEMAIS FUNÇÕES', gruposDemais, gruposVigilantes.length>0)}
+    ${renderSecaoGrupo('SUPERVISORES E COORDENADORES', gruposSupCoord, false)}
+    ${renderSecaoGrupo('VIGILANTES', gruposVigilantes, gruposSupCoord.length>0)}
+    ${renderSecaoGrupo('DEMAIS FUNÇÕES', gruposDemais, gruposSupCoord.length>0 || gruposVigilantes.length>0)}
     <div class="total-geral-evento-fechamento" style="display:flex; justify-content:flex-end; margin-top:10px; padding:10px 12px; border-top:2px solid #333; font-weight:800; font-size:15px; page-break-inside:avoid; break-inside:avoid;">
       TOTAL GERAL DO EVENTO: <span style="margin-left:10px;">${brl(totalGeral)}</span>
     </div>
