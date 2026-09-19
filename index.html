@@ -311,7 +311,19 @@
     /* CORREÇÃO DE IMPRESSÃO: a tabela ocupa 100% da largura útil do A4.
        As colunas já têm larguras percentuais no <colgroup>, evitando
        que o navegador use uma grade para o cabeçalho e outra para o corpo. */
-    .tabela-fechamento-datas{width:100% !important; max-width:100% !important; table-layout:fixed !important;}
+    .tabela-fechamento-datas{width:100% !important; max-width:100% !important; table-layout:fixed !important; display:table !important;}
+    /* CORREÇÃO DEFINITIVA DO DESALINHAMENTO NA IMPRESSÃO:
+       em telas estreitas a regra mobile transforma tabelas em display:block
+       e thead/tbody em display:table. Ao imprimir, o Chrome pode manter
+       essa estrutura e calcular a largura do cabeçalho e do corpo de forma
+       independente. Na impressão, restauramos explicitamente a semântica
+       nativa de tabela para que o <colgroup> seja aplicado à tabela inteira. */
+    .tabela-fechamento-datas colgroup{display:table-column-group !important;}
+    .tabela-fechamento-datas col{display:table-column !important;}
+    .tabela-fechamento-datas thead{display:table-header-group !important; width:auto !important;}
+    .tabela-fechamento-datas tbody{display:table-row-group !important; width:auto !important;}
+    .tabela-fechamento-datas tr{display:table-row !important;}
+    .tabela-fechamento-datas th,.tabela-fechamento-datas td{display:table-cell !important;}
     .tabela-fechamento-datas .linha-cabecalho-impressao th{background:#d6d6d6 !important; color:#1a1a1a !important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
     .tabela-fechamento-datas tbody td,.tabela-fechamento-datas tbody tr:last-child td{border-bottom:1px solid #e2e2e2 !important;}
     .tabela-fechamento-datas .col-assinatura,.tabela-fechamento-datas .col-data-manual{border-left:1px solid #ccc !important;}
@@ -354,7 +366,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 10:45';
+const APP_VERSION = '19/09/2026 11:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
