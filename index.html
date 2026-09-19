@@ -366,7 +366,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 11:00';
+const APP_VERSION = '19/09/2026 11:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -4388,7 +4388,7 @@ function abrirJanelaImpressaoCrachas(selecionados){
         </div>
         <div class="face-verso">
           <div class="verso-header">
-            <div>VÁLIDO SOMENTE EM EVENTOS DO GRUPO ANJOS DA PAZ</div>
+            <div>VÁLIDO SOMENTE EM EVENTOS DA</div>
             <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
@@ -4411,7 +4411,7 @@ function abrirJanelaImpressaoCrachas(selecionados){
       ${grupo.map(conjuntoHtml).join('')}
     </div>`).join('');
 
-  abrirJanelaComPaginasDeCrachas(paginasHtml);
+  abrirJanelaComPaginasDeCrachas(paginasHtml, nomeArquivoCracha(selecionados));
 }
 /* EXTRAÍDO NESTA RODADA (implementação do Brigadista) — wrapper
    HTML/CSS/window.open, idêntico ao que já existia dentro de
@@ -4421,12 +4421,20 @@ function abrirJanelaImpressaoCrachas(selecionados){
    (classes .conjunto-cracha/.face-frente/.verso-grid/etc., sem nada
    específico de Vigilante ou Samseg), por isso é seguro reaproveitar
    sem duplicar centenas de linhas. */
-function abrirJanelaComPaginasDeCrachas(paginasHtml){
+function nomeArquivoCracha(selecionados){
+  const nomes=(selecionados||[]).map(s=>String(s&&s.nome||'').trim()).filter(Boolean);
+  if(nomes.length===1){
+    return nomes[0].normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Za-z0-9 ]+/g,' ').replace(/\s+/g,' ').trim().toUpperCase() || 'CRACHA';
+  }
+  return `CRACHAS - ${nomes.length} COLABORADORES`;
+}
+
+function abrirJanelaComPaginasDeCrachas(paginasHtml, nomeArquivo="Crachás"){
   const html=`<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<title>Crachás</title>
+<title>${escapeHtml(nomeArquivo)}</title>
 <style>
   *{box-sizing:border-box;}
   body{margin:0; padding:0; font-family:'Inter',Arial,sans-serif; background:#fff;}
@@ -4461,16 +4469,16 @@ function abrirJanelaComPaginasDeCrachas(paginasHtml){
      3 linhas (Identidade/Data do Curso, CPF/Reciclagem, Nº DPF) têm
      EXATAMENTE a mesma altura — não é um valor aproximado, é a
      própria grade que reparte o espaço disponível em partes iguais. */
-  .verso-header{text-align:center; font-weight:800; font-size:12px; line-height:1.5; border-bottom:1px solid #000; padding-bottom:2mm; margin-bottom:4mm;}
-  .verso-header-empresa{white-space:nowrap;}
+  .verso-header{text-align:center; font-weight:800; font-size:11px; line-height:1.2; border-bottom:1px solid #000; padding-bottom:1.5mm; margin-bottom:3mm; flex-shrink:0;}
+  .verso-header-empresa{white-space:nowrap; font-size:12px; margin-top:0.7mm;}
   .verso-grid{display:grid; grid-template-columns:1fr 1fr; grid-template-rows:repeat(2,1fr); border:1px solid #000; flex:1;}
   .verso-cel{border:1px solid #000; padding:1.5mm 2mm; font-size:12px; display:flex; flex-direction:column; justify-content:center; gap:1mm; overflow:hidden;}
   .verso-cel.verso-dpf{grid-column:1 / 3;}
   .verso-cel span{font-size:12px; font-weight:600;}
-  .verso-assinatura{margin-top:auto; padding-top:2mm; display:flex; flex-direction:column; align-items:center;}
-  .verso-assinatura-linha{border-top:1px solid #000; width:70%; margin-bottom:2mm;}
-  .verso-responsavel-nome{text-align:center; font-size:11px; margin-bottom:0.5mm;}
-  .verso-responsavel{text-align:center; font-weight:700; font-size:12px; letter-spacing:0.4px;}
+  .verso-assinatura{margin-top:2.5mm; padding-top:1.5mm; display:flex; flex-direction:column; align-items:center; flex-shrink:0; min-height:11mm;}
+  .verso-assinatura-linha{border-top:1px solid #000; width:70%; margin-bottom:1.2mm;}
+  .verso-responsavel-nome{text-align:center; font-size:10px; line-height:1.15; margin-bottom:0.7mm; white-space:nowrap; max-width:100%; overflow:hidden; text-overflow:clip;}
+  .verso-responsavel{text-align:center; font-weight:700; font-size:10px; line-height:1.15; letter-spacing:0.4px; white-space:nowrap;}
   @media print{
     body{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
   }
@@ -4512,7 +4520,7 @@ function abrirJanelaImpressaoCrachasBrigadista(selecionados){
       <div class="conjunto-cracha">
         <div class="face-frente">
           <div class="frente-topo">
-            <div class="frente-logo-wrap"><img class="frente-logo" src="data:image/png;base64,${LOGO_BRIGADISTA_BASE64}" alt="GRUPO ANJOS DA PAZ"></div>
+            <div class="frente-logo-wrap"><img class="frente-logo" src="data:image/png;base64,${LOGO_BRIGADISTA_BASE64}" alt="SAMSEG SEGURANÇA"></div>
             <div class="frente-foto-espaco"></div>
           </div>
           <div class="frente-titulo">BRIGADISTA EVENTUAL</div>
@@ -4520,7 +4528,8 @@ function abrirJanelaImpressaoCrachasBrigadista(selecionados){
         </div>
         <div class="face-verso">
           <div class="verso-header">
-            <div>VÁLIDO SOMENTE EM EVENTOS DO GRUPO ANJOS DA PAZ</div>
+            <div>VÁLIDO SOMENTE EM EVENTOS DA</div>
+            <div class="verso-header-empresa">SAMSEG SEGURANÇA PRIVADA</div>
           </div>
           <div class="verso-grid">
             <div class="verso-cel"><b>IDENTIDADE:</b><span>${escapeHtml(formatIdentidadeMG(cad.identidade||''))}</span></div>
@@ -4542,7 +4551,7 @@ function abrirJanelaImpressaoCrachasBrigadista(selecionados){
       ${grupo.map(conjuntoHtmlBrigadista).join('')}
     </div>`).join('');
 
-  abrirJanelaComPaginasDeCrachas(paginasHtml);
+  abrirJanelaComPaginasDeCrachas(paginasHtml, nomeArquivoCracha(selecionadosBrig));
 }
 function attachImpressaoCrachasHandlers(){
   const btnCopiar=document.getElementById('btnCopiarLinkCracha');
