@@ -266,6 +266,127 @@
     .mobile-card-list{display:block;}
   }
 
+  .desktop-values-toolbar{display:flex;}
+  /* ================= EVENTO MOBILE — NAVEGAÇÃO POR ETAPAS =================
+     No celular, a navegação do evento vira uma faixa horizontal compacta.
+     Cada etapa é um ícone/abreviação tocável; o usuário pode arrastar
+     lateralmente para chegar às demais etapas. Desktop permanece com as
+     abas originais. */
+  .event-mobile-nav{display:none;}
+  .event-mobile-section-title{display:none;}
+  .event-mobile-nav-track{
+    display:flex;
+    gap:3px;
+    overflow-x:auto;
+    overflow-y:hidden;
+    -webkit-overflow-scrolling:touch;
+    scrollbar-width:none;
+    padding:2px 2px 6px;
+    scroll-snap-type:x proximity;
+  }
+  .event-mobile-nav-track::-webkit-scrollbar{display:none;}
+  .event-mobile-step{
+    flex:0 0 62px;
+    min-width:62px;
+    border:0;
+    border-bottom:2px solid transparent;
+    background:transparent;
+    color:var(--muted);
+    padding:4px 2px 6px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:3px;
+    cursor:pointer;
+    scroll-snap-align:center;
+  }
+  .event-mobile-step-icon{
+    width:28px;
+    height:28px;
+    border:1px solid var(--line);
+    border-radius:8px;
+    background:var(--surface-2);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:var(--text);
+    font-size:9px;
+    font-weight:800;
+    letter-spacing:-.2px;
+    line-height:1;
+  }
+  .event-mobile-step-label{
+    font-size:8.5px;
+    line-height:1.05;
+    text-align:center;
+    white-space:nowrap;
+    text-transform:uppercase;
+    max-width:62px;
+  }
+  .event-mobile-step.active{color:var(--amber); border-bottom-color:var(--amber);}
+  .event-mobile-step.active .event-mobile-step-icon{
+    color:var(--amber);
+    border-color:var(--amber);
+    background:rgba(232,163,61,.10);
+  }
+  .event-mobile-section-title{
+    font-family:'Space Grotesk',sans-serif;
+    font-size:16px;
+    font-weight:700;
+    color:var(--text);
+    padding:7px 2px 8px;
+  }
+  .mobile-funcao-list{display:none;}
+  .mobile-funcao-row{
+    border-bottom:1px solid var(--line);
+    padding:7px 2px;
+    min-height:39px;
+    display:flex;
+    align-items:center;
+    gap:7px;
+  }
+  .mobile-funcao-main{flex:1; min-width:0; cursor:pointer;}
+  .mobile-funcao-name{font-size:12px; font-weight:700; line-height:1.15;}
+  .mobile-funcao-value{font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); margin-top:2px;}
+  .mobile-funcao-value.ativo{color:var(--teal);}
+  .mobile-funcao-arrow{
+    width:28px; min-width:28px; height:28px; border:1px solid var(--line);
+    border-radius:7px; background:var(--surface-2); color:var(--muted);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    font-size:15px; line-height:1;
+  }
+  .mobile-funcao-details{
+    display:none;
+    width:100%;
+    padding:7px 0 2px;
+    border-top:1px dashed var(--line);
+    margin-top:7px;
+    gap:7px;
+    align-items:center;
+  }
+  .mobile-funcao-row.expanded{flex-wrap:wrap; background:rgba(255,255,255,.015);}
+  .mobile-funcao-row.expanded .mobile-funcao-details{display:flex;}
+  .mobile-funcao-details input{flex:1; min-width:110px; height:36px; padding:7px 9px; font-size:14px;}
+  .mobile-funcao-details .btn{min-height:36px; padding:7px 10px;}
+
+  @media(max-width:860px){
+    .event-mobile-nav{display:block; margin:0 -4px 2px;}
+    .event-mobile-section-title{display:block;}
+    .subtabs{display:none !important;}
+    #panelContent > .card-title{display:none;}
+    .panel{border:0; border-radius:0; padding:0 2px 24px; background:transparent;}
+    .event-bar{padding:10px 12px; margin-bottom:5px; gap:8px;}
+    .event-bar .cliente{font-size:12.5px;}
+    .event-bar .meta{font-size:10.5px;}
+    .event-bar .btn{min-height:34px; padding:7px 9px; font-size:11px;}
+    .desktop-values-toolbar{display:none !important;}
+    .desktop-values-list{display:none !important;}
+    .mobile-funcao-list{display:block;}
+    .mobile-funcao-search{margin-bottom:5px;}
+    .mobile-funcao-search input{width:100%; height:38px; padding:8px 10px; font-size:14px;}
+  }
+
   /* ---------- dashboard ---------- */
   .stat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:12px;}
   .stat-card{background:var(--surface); border:1px solid var(--line); border-radius:10px; padding:16px;}
@@ -477,7 +598,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 11:30';
+const APP_VERSION = '19/09/2026 18:30';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2191,24 +2312,12 @@ function renderValoresFuncaoEvento(){
   }
   const ev = currentEvent();
   const lista = ordenarValoresFuncaoParaExibicao(ev.valoresFuncao || []);
-  return `
-    <div class="card-title">Valores por função — só neste evento</div>
-    <div class="card-sub">Defina quanto cada função recebe por dia trabalhado neste evento. Esses valores valem só para "${escapeHtml(ev.evento)}" — outros eventos podem ter valores diferentes para a mesma função.</div>
-    <div class="add-row" style="gap:10px; flex-wrap:wrap;">
-      <input type="text" id="buscaFuncaoEvento" placeholder="🔍 Buscar função..." value="${escapeHtml(buscaFuncaoEventoTexto)}" style="flex:1; min-width:200px;">
-      <button class="btn btn-amber" id="btnNewFuncaoEvento">+ Nova função para este evento</button>
-    </div>
-    <div id="listaFuncoesEvento">
-    ${lista.length ? lista.map(f=>{
-      /* Três estados distintos: sem valor definido nunca preenchido
-         (valorDia null/undefined/''); valor explicitamente zero
-         (definido, mas não ativa a função — regra existente mantida:
-         só valor > 0 ativa); e valor > 0 (ativa). */
-      const valorPreenchido = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia));
-      const valorNumerico = valorPreenchido ? parseFloat(f.valorDia) : null;
-      const temValor = valorPreenchido && valorNumerico>0;
-      const funcaoNorm=(f.funcao||'').trim().toUpperCase().replace(/\s+/g,' ');
-      return `
+  const renderDesktop=()=>lista.length ? lista.map(f=>{
+    const valorPreenchido = f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia));
+    const valorNumerico = valorPreenchido ? parseFloat(f.valorDia) : null;
+    const temValor = valorPreenchido && valorNumerico>0;
+    const funcaoNorm=(f.funcao||'').trim().toUpperCase().replace(/\s+/g,' ');
+    return `
       <div class="client-card compacto ${temValor?'funcao-ativa':''}" data-funcao="${escapeHtml(f.funcao)}" data-funcao-busca="${escapeHtml(funcaoNorm)}">
         <div class="main">
           <div class="nome">${escapeHtml(f.funcao)}</div>
@@ -2220,23 +2329,84 @@ function renderValoresFuncaoEvento(){
         </div>
         <button class="btn btn-danger btn-sm btn-del-funcao-evento">Excluir</button>
       </div>`;
-    }).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função (ex: Vigilante, Porteiro) para o cálculo automático funcionar neste evento.</div>`}
+  }).join('') : `<div class="empty"><b>Nenhuma função cadastrada neste evento</b>Cadastre o valor diário de cada função para o cálculo automático funcionar neste evento.</div>`;
+
+  const renderMobile=()=>lista.length ? lista.map(f=>{
+    const valorPreenchido=f.valorDia!=null && f.valorDia!=='' && !isNaN(parseFloat(f.valorDia));
+    const valorNumerico=valorPreenchido ? parseFloat(f.valorDia) : null;
+    const temValor=valorPreenchido && valorNumerico>0;
+    const valorTxt=temValor ? brl(valorNumerico) : (valorPreenchido ? 'R$ 0,00' : 'Sem valor definido');
+    return `<div class="mobile-funcao-row" data-funcao-mobile="${escapeHtml(f.funcao)}">
+      <div class="mobile-funcao-main" title="Toque para editar o valor">
+        <div class="mobile-funcao-name">${escapeHtml(f.funcao)}</div>
+        <div class="mobile-funcao-value ${temValor?'ativo':''}">${valorTxt}</div>
+      </div>
+      <button type="button" class="mobile-funcao-arrow" aria-label="Mais informações" title="Mais informações">›</button>
+      <div class="mobile-funcao-details">
+        <input type="number" class="mobile-input-valor-funcao" min="0" step="0.01" placeholder="Valor diário" value="${f.valorDia!=null && f.valorDia!=='' ? f.valorDia : ''}">
+        <button type="button" class="btn btn-amber btn-sm mobile-btn-salvar-valor">Salvar</button>
+        <button type="button" class="btn btn-danger btn-sm mobile-btn-del-funcao">Excluir</button>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty" style="padding:24px 8px;"><b>Nenhuma função cadastrada</b>Use “+ Nova função” para cadastrar.</div>`;
+
+  return `
+    <div class="card-title">Valores por função — só neste evento</div>
+    <div class="card-sub">Defina quanto cada função recebe por dia trabalhado neste evento. Toque no nome da função para editar o valor. Use a seta para abrir mais opções.</div>
+    <div class="add-row desktop-values-toolbar" style="gap:10px; flex-wrap:wrap;">
+      <input type="text" id="buscaFuncaoEvento" placeholder="🔍 Buscar função..." value="${escapeHtml(buscaFuncaoEventoTexto)}" style="flex:1; min-width:200px;">
+      <button class="btn btn-amber" id="btnNewFuncaoEvento">+ Nova função para este evento</button>
+    </div>
+    <div class="mobile-funcao-search">
+      <input type="text" id="buscaFuncaoEventoMobile" placeholder="🔍 Buscar função..." value="${escapeHtml(buscaFuncaoEventoTexto)}">
+      <button class="btn btn-amber btn-sm" id="btnNewFuncaoEventoMobile" style="margin-top:5px; width:100%;">+ Nova função</button>
+    </div>
+    <div id="listaFuncoesEvento" class="desktop-values-list">
+      ${renderDesktop()}
+    </div>
+    <div id="listaFuncoesEventoMobile" class="mobile-funcao-list">
+      ${renderMobile()}
     </div>
     <div id="buscaFuncaoEventoVazio" class="empty" style="display:none;"><b>Nenhuma função encontrada</b>Tente buscar por outro termo.</div>
   `;
 }
+function editarValorFuncaoMobile(nome, bruto){
+  const ev=currentEvent();
+  const entry=(ev.valoresFuncao||[]).find(f=>f.funcao===nome);
+  if(!entry) return Promise.resolve();
+  bruto=(bruto??'').toString().trim();
+  if(bruto===''){ entry.valorDia=null; }
+  else{
+    const novoValor=parseFloat(bruto.replace(',','.'));
+    if(isNaN(novoValor) || novoValor<0){ showToast('Informe um valor numérico válido.'); return Promise.resolve(false); }
+    entry.valorDia=novoValor;
+  }
+  return saveEvents().then(r=>{
+    if(r && r.ok){ renderShell(); return true; }
+    showToast('Erro ao salvar valor: '+(r && r.error && r.error.message ? r.error.message : 'tente novamente.'));
+    return false;
+  });
+}
 function filtrarFuncoesEvento(){
   const termo=(buscaFuncaoEventoTexto||'').trim().toUpperCase().replace(/\s+/g,' ');
-  const cards=document.querySelectorAll('#listaFuncoesEvento .client-card');
+  const desktopCards=document.querySelectorAll('#listaFuncoesEvento .client-card');
+  const mobileRows=document.querySelectorAll('#listaFuncoesEventoMobile .mobile-funcao-row');
   let algumVisivel=false;
-  cards.forEach(card=>{
+  desktopCards.forEach(card=>{
     const alvo=card.dataset.funcaoBusca||'';
-    const bate = !termo || alvo.includes(termo);
-    card.style.display = bate ? '' : 'none';
+    const bate=!termo || alvo.includes(termo);
+    card.style.display=bate?'':'none';
+    if(bate) algumVisivel=true;
+  });
+  mobileRows.forEach(row=>{
+    const alvo=(row.dataset.funcaoMobile||'').toUpperCase().replace(/\s+/g,' ');
+    const bate=!termo || alvo.includes(termo);
+    row.style.display=bate?'':'none';
     if(bate) algumVisivel=true;
   });
   const vazio=document.getElementById('buscaFuncaoEventoVazio');
-  if(vazio) vazio.style.display = (cards.length && !algumVisivel) ? '' : 'none';
+  const total=desktopCards.length || mobileRows.length;
+  if(vazio) vazio.style.display=(total && !algumVisivel)?'':'none';
 }
 function openFuncaoEventoForm(existing){
   const ev = currentEvent();
@@ -2511,6 +2681,42 @@ async function deleteCurrentEvent(){
 }
 
 /* ================= EVENTO DETAIL ================= */
+function renderEventoMobileNav(){
+  const etapas=[
+    ['valoresFuncao','R$','VALORES'],
+    ['cpfsAutorizados','CPF','CPFs'],
+    ['preescala','PRÉ','PRÉ-ESCALA'],
+    ['escala','ESC','ESCALA'],
+    ['escalaDias','DIA','ESCALA/DIA'],
+    ['checkoutDias','✓','CHECKOUT'],
+    ['fechamentoNovo','FIN','FECHAMENTO'],
+    ['aprovacao','APR','APROVAÇÃO'],
+    ['cracha','ID','CRACHÁS']
+  ];
+  return `<div class="event-mobile-nav" aria-label="Etapas do evento">
+    <div class="event-mobile-nav-track">
+      ${etapas.map(([id,icon,label])=>`
+        <button type="button" class="event-mobile-step ${subTab===id?'active':''}" data-mobile-sub="${id}" aria-label="${label}">
+          <span class="event-mobile-step-icon">${icon}</span>
+          <span class="event-mobile-step-label">${label}</span>
+        </button>`).join('')}
+    </div>
+  </div>`;
+}
+function tituloSubTabEvento(){
+  const nomes={
+    valoresFuncao:'Valores por Função',
+    cpfsAutorizados:'CPFs Autorizados',
+    preescala:'Pré-Escala',
+    escala:'Escala Oficial',
+    escalaDias:'Escala e Horário por Dia',
+    checkoutDias:'Checkout por Dia',
+    fechamentoNovo:'Fechamento Financeiro',
+    aprovacao:'Aprovação do Gestor',
+    cracha:'Impressão de Crachás'
+  };
+  return nomes[subTab] || 'Etapa do Evento';
+}
 function renderEventoDetail(main){
   const ev=currentEvent();
   if(!ev){ section='eventos'; renderMain(); return; }
@@ -2523,6 +2729,8 @@ function renderEventoDetail(main){
       <button class="btn btn-ghost btn-sm" id="btnEditEvent">Editar</button>
       <button class="btn btn-danger btn-sm" id="btnDeleteEvent">Excluir</button>
     </div>
+    ${renderEventoMobileNav()}
+    <div class="event-mobile-section-title">${escapeHtml(tituloSubTabEvento())}</div>
     <div class="subtabs">
       <div class="subtab ${subTab==='valoresFuncao'?'active':''}" data-sub="valoresFuncao">Valores por Função</div>
       <div class="subtab ${subTab==='cpfsAutorizados'?'active':''}" data-sub="cpfsAutorizados">CPFs Autorizados</div>
@@ -2538,7 +2746,19 @@ function renderEventoDetail(main){
   `;
   document.getElementById('btnEditEvent').onclick=()=>openEventForm(ev);
   document.getElementById('btnDeleteEvent').onclick=deleteCurrentEvent;
-  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=async ()=>{ subTab=t.dataset.sub; if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca(); if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento(); if(subTab==='cracha') await loadColaboradoresBanco(); renderShell(); }; });
+  const selecionarEtapaEvento=async (novaSubTab)=>{
+    subTab=novaSubTab;
+    if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca();
+    if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento();
+    if(subTab==='cracha') await loadColaboradoresBanco();
+    renderShell();
+  };
+  main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=()=>selecionarEtapaEvento(t.dataset.sub); });
+  main.querySelectorAll('.event-mobile-step').forEach(t=>{ t.onclick=()=>selecionarEtapaEvento(t.dataset.mobileSub); });
+  requestAnimationFrame(()=>{
+    const ativo=main.querySelector('.event-mobile-step.active');
+    if(ativo) ativo.scrollIntoView({inline:'center',block:'nearest',behavior:'auto'});
+  });
 
   const panel=document.getElementById('panelContent');
   if(subTab==='cpfsAutorizados') panel.innerHTML=renderCpfsAutorizadosTab();
@@ -5337,6 +5557,56 @@ function attachDetailHandlers(){
     buscaFuncaoInput.oninput=()=>{ buscaFuncaoEventoTexto=buscaFuncaoInput.value; filtrarFuncoesEvento(); };
     filtrarFuncoesEvento();
   }
+  const buscaFuncaoInputMobile=document.getElementById('buscaFuncaoEventoMobile');
+  if(buscaFuncaoInputMobile){
+    buscaFuncaoInputMobile.oninput=()=>{ buscaFuncaoEventoTexto=buscaFuncaoInputMobile.value; filtrarFuncoesEvento(); };
+  }
+  const btnNewFuncaoEventoMobile=document.getElementById('btnNewFuncaoEventoMobile');
+  if(btnNewFuncaoEventoMobile) btnNewFuncaoEventoMobile.onclick=()=>openFuncaoEventoForm();
+  document.querySelectorAll('.mobile-funcao-main').forEach(el=>{
+    el.onclick=async ()=>{
+      const row=el.closest('.mobile-funcao-row');
+      const nome=row.dataset.funcaoMobile;
+      const ev=currentEvent();
+      const entry=(ev.valoresFuncao||[]).find(f=>f.funcao===nome);
+      if(!entry) return;
+      const atual=entry.valorDia!=null && entry.valorDia!=='' ? entry.valorDia : '';
+      const valor=prompt(`Valor diário de ${nome} (R$):`, atual);
+      if(valor===null) return;
+      await editarValorFuncaoMobile(nome,valor);
+    };
+  });
+  document.querySelectorAll('.mobile-funcao-arrow').forEach(btn=>{
+    btn.onclick=(e)=>{
+      e.stopPropagation();
+      const row=btn.closest('.mobile-funcao-row');
+      row.classList.toggle('expanded');
+      btn.textContent=row.classList.contains('expanded')?'⌄':'›';
+    };
+  });
+  document.querySelectorAll('.mobile-btn-salvar-valor').forEach(btn=>{
+    btn.onclick=async (e)=>{
+      e.stopPropagation();
+      const row=btn.closest('.mobile-funcao-row');
+      const nome=row.dataset.funcaoMobile;
+      const input=row.querySelector('.mobile-input-valor-funcao');
+      await editarValorFuncaoMobile(nome,input.value);
+    };
+  });
+  document.querySelectorAll('.mobile-btn-del-funcao').forEach(btn=>{
+    btn.onclick=async (e)=>{
+      e.stopPropagation();
+      const row=btn.closest('.mobile-funcao-row');
+      const nome=row.dataset.funcaoMobile;
+      if(!confirm(`Excluir o valor de "${nome}" neste evento? Colaboradores com essa função ficarão sem valor cadastrado aqui.`)) return;
+      const ev=currentEvent();
+      ev.valoresFuncao=(ev.valoresFuncao||[]).filter(f=>f.funcao!==nome);
+      const r=await saveEvents();
+      if(r && r.ok) renderShell();
+      else showToast('Erro ao excluir a função.');
+    };
+  });
+  filtrarFuncoesEvento();
   document.querySelectorAll('.input-valor-funcao-direto').forEach(inp=>{
     inp.onchange=async ()=>{
       const nome=inp.closest('.client-card').dataset.funcao;
