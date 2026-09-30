@@ -264,7 +264,22 @@
   @media(max-width:860px){
     .desktop-table{display:none !important;}
     .mobile-card-list{display:block;}
+    /* FASE B — toggle do formulário "+ Autorizar CPF" (só mobile).
+       .mob-form-fields usa display:contents no desktop (fora desta
+       media query) para não alterar em nada o layout atual do
+       .add-row — aqui, dentro do mobile, vira um bloco que só aparece
+       quando o wrapper tem a classe .mob-form-open. */
+    .mob-form-fields{display:none; width:100%; flex-direction:column; gap:10px;}
+    .mob-form-toggle-wrap.mob-form-open .mob-form-fields{display:flex;}
+    .mob-btn-abrir-form{display:inline-flex; width:100%;}
+    .mob-form-toggle-wrap.mob-form-open .mob-btn-abrir-form{display:none;}
+    .mob-desktop-only{display:none;}
+    .mob-only-block{display:block;}
+    .mob-only-block.mob-flex-wrap{display:flex; flex-wrap:wrap;}
   }
+  .mob-form-fields{display:contents;}
+  .mob-btn-abrir-form{display:none;}
+  .mob-only-block{display:none;}
 
   .desktop-values-toolbar{display:flex;}
   /* ================= EVENTO MOBILE — NAVEGAÇÃO POR ETAPAS =================
@@ -579,6 +594,88 @@
     .totals{margin-top:6px; padding-top:8px;}
   }
   @page{ size: A4 landscape; margin: 10mm; }
+
+  /* ==========================================================================
+     FASE A — DESIGN SYSTEM MOBILE (Samseg app)
+     ==========================================================================
+     Tudo aqui é NOVO, isolado, e NÃO é usado por nenhuma tela ainda — nenhuma
+     classe abaixo é referenciada em nenhum HTML/JS existente nesta rodada.
+     Por isso não tem nenhum efeito visual/funcional até a Fase B aplicar essas
+     classes às telas reais. Além disso, tudo fica dentro de
+     @media(max-width:860px) — o mesmo breakpoint mobile já usado no resto do
+     projeto (Etapa 2) — então mesmo depois de aplicado, nunca poderá afetar o
+     desktop/tablet, que continuam 100% com o layout/tema atual (sidebar,
+     tabelas, tema escuro).
+     Variáveis --mob-* são declaradas no :root só para ficarem centralizadas;
+     como nenhuma classe .mob-* existe em nenhum elemento real ainda, isso não
+     altera nada visualmente em nenhuma tela, mobile ou desktop. */
+  :root{
+    --mob-bg:#ffffff; --mob-header:#1a1a1a; --mob-surface:#f7f7f7; --mob-surface-2:#eef0f2;
+    --mob-border:#e5e5e5; --mob-orange:#f5821f; --mob-orange-soft:#fdeee1;
+    --mob-green:#2e7d32; --mob-green-soft:#e8f5e9;
+    --mob-red:#e53935; --mob-red-soft:#fdecea;
+    --mob-amber:#f5a623; --mob-amber-soft:#fef3e0;
+    --mob-text:#1a1a1a; --mob-muted:#767676;
+  }
+  @media(max-width:860px){
+    /* ---------- estrutura geral do app mobile ---------- */
+    .mob-shell{background:var(--mob-bg); color:var(--mob-text); min-height:100vh;}
+    .mob-header{display:flex; align-items:center; gap:10px; background:var(--mob-header); color:#fff; padding:12px 14px; position:sticky; top:0; z-index:40;}
+    .mob-header .mob-back{font-size:18px; color:#fff; background:none; border:none; cursor:pointer; padding:4px 6px;}
+    .mob-header .mob-logo-wrap{display:flex; align-items:center; gap:8px; flex:1;}
+    .mob-header .mob-title{font-weight:700; font-size:14px; letter-spacing:0.3px;}
+    .mob-header .mob-subtitle{font-size:9.5px; color:#c9c9c9; text-transform:uppercase; letter-spacing:0.5px;}
+    .mob-header .mob-menu-dots{font-size:18px; color:#fff; background:none; border:none; cursor:pointer; padding:4px 8px;}
+
+    /* ---------- navegação superior do evento (abas) ---------- */
+    .mob-toptabs{display:flex; gap:6px; overflow-x:auto; -webkit-overflow-scrolling:touch; padding:8px 10px; background:var(--mob-surface); border-bottom:1px solid var(--mob-border);}
+    .mob-toptab{flex:0 0 auto; padding:8px 12px; font-size:11.5px; font-weight:600; color:var(--mob-muted); background:#fff; border:1px solid var(--mob-border); border-radius:8px; white-space:nowrap; cursor:pointer;}
+    .mob-toptab.active{background:var(--mob-orange-soft); color:var(--mob-orange); border-color:var(--mob-orange);}
+
+    /* ---------- barra inferior fixa ---------- */
+    .mob-bottomnav{position:fixed; left:0; right:0; bottom:0; z-index:45; display:flex; background:#fff; border-top:1px solid var(--mob-border); padding:6px 2px calc(6px + env(safe-area-inset-bottom,0px));}
+    .mob-nav-item{flex:1; display:flex; flex-direction:column; align-items:center; gap:2px; padding:6px 2px; min-height:44px; justify-content:center; color:var(--mob-muted); cursor:pointer;}
+    .mob-nav-item.active{color:var(--mob-orange);}
+    .mob-nav-icon{font-size:18px; line-height:1;}
+    .mob-nav-label{font-size:9.5px; font-weight:600;}
+
+    /* ---------- cards com expansão ---------- */
+    .mob-card{background:#fff; border:1px solid var(--mob-border); border-radius:10px; margin-bottom:10px; overflow:hidden;}
+    .mob-card-header{display:flex; align-items:center; gap:10px; padding:12px 14px; cursor:pointer; min-height:44px;}
+    .mob-card-header .mob-card-main{flex:1; min-width:0;}
+    .mob-card-nome{font-weight:700; font-size:13.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+    .mob-card-sub{font-size:11.5px; color:var(--mob-muted); margin-top:1px;}
+    .mob-card-body{padding:0 14px 14px; border-top:1px solid var(--mob-border);}
+    .mob-card-linha{display:flex; justify-content:space-between; gap:10px; padding:7px 0; font-size:12.5px; border-bottom:1px dashed var(--mob-border);}
+    .mob-card-linha:last-child{border-bottom:none;}
+    .mob-card-linha .l{color:var(--mob-muted);}
+    .mob-card-linha .v{font-weight:600; text-align:right;}
+    .mob-card-acoes{display:flex; flex-wrap:wrap; gap:8px; margin-top:10px;}
+
+    /* ---------- avatar/iniciais ---------- */
+    .mob-avatar{width:36px; height:36px; border-radius:50%; background:var(--mob-surface-2); color:var(--mob-muted); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex:0 0 auto; overflow:hidden;}
+    .mob-avatar img{width:100%; height:100%; object-fit:cover;}
+
+    /* ---------- badges de status ---------- */
+    .mob-badge{display:inline-block; padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+    .mob-badge-green{background:var(--mob-green-soft); color:var(--mob-green);}
+    .mob-badge-red{background:var(--mob-red-soft); color:var(--mob-red);}
+    .mob-badge-amber{background:var(--mob-amber-soft); color:#a8710f;}
+    .mob-badge-neutro{background:var(--mob-surface-2); color:var(--mob-muted);}
+
+    /* ---------- botões mobile ---------- */
+    .mob-btn{display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:44px; padding:10px 16px; border-radius:8px; font-size:13px; font-weight:700; border:1px solid var(--mob-border); background:#fff; color:var(--mob-text); cursor:pointer;}
+    .mob-btn-primary{background:var(--mob-orange); border-color:var(--mob-orange); color:#fff;}
+    .mob-btn-ghost{background:#fff; color:var(--mob-muted);}
+
+    /* ---------- busca recolhível ---------- */
+    .mob-search-open{display:flex; align-items:center; gap:8px; background:var(--mob-surface); border:1px solid var(--mob-border); border-radius:8px; padding:6px 10px;}
+    .mob-search-input{flex:1; border:none; background:none; font-size:14px; min-height:32px; color:var(--mob-text);}
+    .mob-search-input:focus{outline:none;}
+
+    /* ---------- garante zero rolagem horizontal na base mobile ---------- */
+    .mob-shell, .mob-shell *{max-width:100%; box-sizing:border-box;}
+  }
 </style>
 </head>
 <body>
@@ -598,7 +695,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 18:30';
+const APP_VERSION = '19/09/2026 18:45';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2805,41 +2902,86 @@ function renderPreEscala(){
       <div class="field" style="flex:1;"><label>Link para o candidato consultar o status da candidatura</label><input type="text" readonly value="${statusLink}" id="linkFieldStatus"></div>
       <button class="btn btn-ghost btn-sm" id="btnCopyLinkStatus" style="align-self:flex-end;">Copiar link</button>
     </div>
-    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaPreEscala" placeholder="Buscar por nome ou CPF" value="${escapeHtml(preEscalaBusca)}"></div>
+    <div class="mob-only-block mob-flex-wrap" style="gap:8px; margin-bottom:12px;">
+      <button class="mob-btn mob-btn-primary" id="btnCopyLinkMobile">🔗 COPIAR LINK CONVOCAÇÃO</button>
+      ${renderMobSearchToggle('preEscalaMobile', 'Buscar por nome ou CPF', preEscalaBusca)}
+    </div>
+    <div class="field mob-desktop-only" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaPreEscala" placeholder="Buscar por nome ou CPF" value="${escapeHtml(preEscalaBusca)}"></div>
     <div id="preEscalaLista">${renderPreEscalaLista()}</div>
   `;
 }
 function renderPreEscalaLista(){
   const pendentes = filtrarPorNomeOuCpf(interessados.filter(p=>(p.status||'pendente')==='pendente'), preEscalaBusca, p=>p.nome, p=>p.cpf);
   const decididos = filtrarPorNomeOuCpf(interessados.filter(p=>(p.status||'pendente')!=='pendente'), preEscalaBusca, p=>p.nome, p=>p.cpf);
+  /* FASE B — card mobile compacto/expansível, reaproveitando os
+     MESMOS dados (p.nome/p.cpf/p.telefone/p.funcao) e a MESMA classe
+     "interesse-row"+data-id que os handlers já usam (attachPreEscalaListaHandlers
+     já procura por .closest('.interesse-row'), não por .closest('tr') —
+     por isso funciona sem nenhuma alteração de handler). Reciclagem:
+     só é mostrada quando o colaborador já está no Banco (mesmo dado
+     que o botão "Aprovar convocação" já consulta) — nunca inventada. */
+  const cardMobilePessoa=(p, i, ehPendente)=>{
+    const colab=buscarColaboradorPorCpf(p.cpf);
+    const header=`
+      ${renderMobAvatar(p.nome, p.foto_url)}
+      <div class="mob-card-main">
+        <div class="mob-card-nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))}</div>
+        <div class="mob-card-sub">${escapeHtml(p.funcao||'função não informada')}</div>
+      </div>`;
+    const body=`
+      <div class="mob-card-linha"><span class="l">CPF</span><span class="v mono">${escapeHtml(p.cpf?formatCpf(p.cpf):'não informado')}</span></div>
+      <div class="mob-card-linha"><span class="l">Telefone</span><span class="v">${p.telefone?escapeHtml(formatTelefone(p.telefone)):'—'}</span></div>
+      <div class="mob-card-linha"><span class="l">Função</span><span class="v">${escapeHtml(p.funcao||'—')}</span></div>
+      <div class="mob-card-linha"><span class="l">Reciclagem</span><span class="v">${colab&&colab.reciclagem?formatDate(colab.reciclagem):'—'}</span></div>
+      ${ehPendente
+        ? `<div class="mob-card-acoes"><button class="mob-btn btn-approve" style="color:var(--mob-green);border-color:var(--mob-green);">Aprovar convocação</button><button class="mob-btn btn-reject" style="color:var(--mob-red);border-color:var(--mob-red);">Recusar</button></div>`
+        : `<div class="mob-card-acoes"><span class="mob-badge ${p.status==='aprovado'?'mob-badge-green':'mob-badge-red'}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span></div>`}`;
+    return `<div class="interesse-row" data-id="${p.id}">${renderMobExpandCard('preEscala', p.id, header, body)}</div>`;
+  };
   return `
     ${pendentes.length ? (()=>{
       const grupos=agruparPorFuncaoPrincipal(pendentes, p=>p.funcao, p=>p.nome);
       return `
         ${renderResumoQuantidadesFuncao(grupos)}
-        ${grupos.map(g=>`
-          <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-          ${g.itens.map((p,i)=>`
-            <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
-              <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
-              <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
-            </div>`).join('')}
-        `).join('')}
+        <div class="desktop-table">
+          ${grupos.map(g=>`
+            <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
+            ${g.itens.map((p,i)=>`
+              <div class="interesse-row" data-id="${p.id}">
+                <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}${p.telefone?' · Tel: '+escapeHtml(formatTelefone(p.telefone)):''}</div></div>
+                <button class="btn btn-teal btn-sm btn-approve">Aprovar convocação</button>
+                <button class="btn btn-danger btn-sm btn-reject">Recusar</button>
+              </div>`).join('')}
+          `).join('')}
+        </div>
+        <div class="mobile-card-list">
+          ${grupos.map(g=>`
+            <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+            ${g.itens.map((p,i)=>cardMobilePessoa(p,i,true)).join('')}
+          `).join('')}
+        </div>
       `;
     })() : `<div class="empty"><b>Ninguém aguardando avaliação</b>Compartilhe o link acima com a equipe.</div>`}
     ${decididos.length ? (()=>{
       const gruposDecididos=agruparPorFuncaoPrincipal(decididos, p=>p.funcao, p=>p.nome);
       return `
         <div class="card-sub" style="margin-top:18px;">Já avaliados</div>
-        ${gruposDecididos.map(g=>`
-          <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
-          ${g.itens.map((p,i)=>`
-            <div class="interesse-row" data-id="${p.id}">
-              <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
-              <span class="badge ${p.status==='aprovado'?'pago':'pendente'}" style="${p.status==='recusado'?'color:var(--red); border-color:var(--red);':''}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span>
-            </div>`).join('')}
-        `).join('')}
+        <div class="desktop-table">
+          ${gruposDecididos.map(g=>`
+            <div class="grupo-funcao-titulo">${escapeHtml(g.funcao)} <span class="grupo-funcao-count">(${g.itens.length})</span></div>
+            ${g.itens.map((p,i)=>`
+              <div class="interesse-row" data-id="${p.id}">
+                <div class="who"><div class="nome">${i+1}. ${escapeHtml(nomeExibicao(p.nome))} <span style="color:var(--muted); font-weight:400;">— ${escapeHtml(p.funcao||'função não informada')}</span></div><div class="when">CPF: ${escapeHtml(p.cpf||'não informado')}</div></div>
+                <span class="badge ${p.status==='aprovado'?'pago':'pendente'}" style="${p.status==='recusado'?'color:var(--red); border-color:var(--red);':''}">${p.status==='aprovado'?'Aprovado':'Recusado'}</span>
+              </div>`).join('')}
+          `).join('')}
+        </div>
+        <div class="mobile-card-list">
+          ${gruposDecididos.map(g=>`
+            <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+            ${g.itens.map((p,i)=>cardMobilePessoa(p,i,false)).join('')}
+          `).join('')}
+        </div>
       `;
     })() : ''}
   `;
@@ -2878,20 +3020,33 @@ function attachPreEscalaListaHandlers(){
   document.querySelectorAll('.btn-reject').forEach(btn=>{
     btn.onclick=async (e)=>{ const id=e.target.closest('.interesse-row').dataset.id; const p=interessados.find(i=>i.id===id); p.status='recusado'; await saveInteressados(); renderShell(); };
   });
+  /* FASE B — expansão dos cards mobile (grupo "preEscala", só 1 aberto
+     por vez). Re-renderiza só a lista, preservando o resto da tela. */
+  attachMobExpandHandlers(()=>{
+    const lista=document.getElementById('preEscalaLista');
+    if(lista){ lista.innerHTML=renderPreEscalaLista(); attachPreEscalaListaHandlers(); }
+  });
 }
+let mobFormEscalaOficialAberto=false; // estado mobile: formulário "+ Adicionar Manualmente" fechado por padrão
 function renderEscalaOficial(){
   const comTelefone = staff.filter(c=>c.telefone && c.telefone.trim());
   return `
     <div class="card-title">Equipe confirmada</div>
     <div class="card-sub">Colaboradores aprovados para este evento. O valor de cada um é calculado automaticamente pela função (ver "Valores por Função") e pelos dias trabalhados, registrados em Controle de Presença.</div>
-    <div class="add-row">
-      <div class="field"><label>Nome</label><input type="text" id="newNome" placeholder="Nome do colaborador"></div>
-      <div class="field"><label>CPF</label><input type="text" id="newCpf" placeholder="000.000.000-00"></div>
-      <div class="field"><label>Telefone (WhatsApp)</label><input type="text" id="newTelefone" placeholder="(00) 00000-0000"></div>
-      <div class="field"><label>Função</label><input type="text" id="newFuncao" placeholder="Ex: Vigilante"></div>
-      <button class="btn btn-amber" id="btnAddStaff">+ Adicionar manualmente</button>
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobSearchToggle('escalaOficialMobile', 'Buscar por nome ou CPF', escalaOficialBusca)}
     </div>
-    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaOficial" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaOficialBusca)}"></div>
+    <div class="add-row mob-form-toggle-wrap ${mobFormEscalaOficialAberto?'mob-form-open':''}">
+      <button type="button" class="mob-btn mob-btn-primary mob-btn-abrir-form" id="btnAbrirFormEscalaOficialMobile">+ ADICIONAR MANUALMENTE</button>
+      <div class="mob-form-fields">
+        <div class="field"><label>Nome</label><input type="text" id="newNome" placeholder="Nome do colaborador"></div>
+        <div class="field"><label>CPF</label><input type="text" id="newCpf" placeholder="000.000.000-00"></div>
+        <div class="field"><label>Telefone (WhatsApp)</label><input type="text" id="newTelefone" placeholder="(00) 00000-0000"></div>
+        <div class="field"><label>Função</label><input type="text" id="newFuncao" placeholder="Ex: Vigilante"></div>
+        <button class="btn btn-amber" id="btnAddStaff">+ Adicionar manualmente</button>
+      </div>
+    </div>
+    <div class="field mob-desktop-only" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaOficial" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaOficialBusca)}"></div>
     ${staff.length ? `
     <div style="margin-bottom:14px;">
       <button class="btn btn-teal btn-sm" id="btnNotifyAll">Notificar convocação no WhatsApp (${comTelefone.length} com telefone)</button>
@@ -2926,30 +3081,31 @@ function renderEscalaOficialLista(){
     <div class="mobile-card-list">
       ${grupos.map(g=>`
         <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
-        ${g.itens.map(c=>`
-          <div class="mobile-person-card" data-id="${c.id}">
-            <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(c.nome))}</div>
-            <div class="mobile-person-main">
-              <div class="mobile-person-name">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
-              <div class="mobile-person-role">${escapeHtml(c.funcao||'—')}</div>
-              <div class="mobile-person-meta">
-                CPF: <span class="mono">${escapeHtml(c.cpf||'—')}</span><br>
-                ${c.telefone ? `WhatsApp: ${escapeHtml(formatTelefone(c.telefone))}` : 'WhatsApp: não cadastrado'}
-              </div>
-              <div class="mobile-person-status">
-                <label class="checkbox-wrap">
-                  <input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}>
-                  <span>${c.escalado?'ESCALADO':'NÃO ESCALADO'}</span>
-                </label>
-                ${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? '<span class="badge pendente">Sem valor</span>' : ''}
-              </div>
-              <div class="mobile-person-actions">
-                <button class="btn btn-danger btn-sm btn-remove-staff">Remover</button>
-              </div>
+        ${g.itens.map(c=>{
+          const colab=buscarColaboradorPorCpf(c.cpf);
+          /* Lista compacta: só nome + ✓ (indicador de escalado), como
+             pedido — nada de "ESCALADO" por extenso. Ao expandir,
+             mostra os MESMOS dados que a tabela desktop já usa
+             (função, CPF, telefone, checkbox, remover) — sem inventar
+             campo nenhum. Reciclagem só aparece quando já disponível
+             no Banco (mesmo padrão já usado na Pré-Escala). */
+          const header=`
+            ${renderMobAvatar(c.nome, c.foto_url)}
+            <div class="mob-card-main">
+              <div class="mob-card-nome">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
             </div>
-            <div class="mobile-card-arrow">›</div>
-          </div>
-        `).join('')}
+            ${c.escalado ? '<span style="font-size:18px; color:var(--mob-green); font-weight:700;">✓</span>' : ''}`;
+          const body=`
+            <div class="mob-card-linha"><span class="l">Função</span><span class="v">${escapeHtml(c.funcao||'—')}${!getFuncaoRateForEvent(currentEvent(),c.funcao) && c.funcao ? ' <span class="mob-badge mob-badge-amber">Sem valor</span>' : ''}</span></div>
+            <div class="mob-card-linha"><span class="l">CPF</span><span class="v mono">${escapeHtml(c.cpf?formatCpf(c.cpf):'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Telefone</span><span class="v">${c.telefone?escapeHtml(formatTelefone(c.telefone)):'não cadastrado'}</span></div>
+            <div class="mob-card-linha"><span class="l">Reciclagem</span><span class="v">${colab&&colab.reciclagem?formatDate(colab.reciclagem):'—'}</span></div>
+            <div class="mob-card-linha"><span class="l">Escalado</span><span class="v"><label class="checkbox-wrap"><input type="checkbox" class="chk-escalado" ${c.escalado?'checked':''}></label></span></div>
+            <div class="mob-card-acoes">
+              <button class="mob-btn btn-remove-staff" style="color:var(--mob-red);border-color:var(--mob-red);">Remover</button>
+            </div>`;
+          return `<div data-id="${c.id}">${renderMobExpandCard('escalaOficial', c.id, header, body)}</div>`;
+        }).join('')}
       `).join('')}
     </div>
   `;
@@ -2961,6 +3117,12 @@ function attachEscalaOficialListaHandlers(){
   });
   document.querySelectorAll('.btn-remove-staff').forEach(btn=>{
     btn.onclick=async (e)=>{ const card=e.target.closest('[data-id]'); const id=card.dataset.id; const c=staff.find(s=>s.id===id); if(!confirm(`Remover ${c.nome} deste evento?`)) return; staff=staff.filter(s=>s.id!==id); await saveStaff(); renderShell(); };
+  });
+  /* FASE B — expansão dos cards mobile (grupo "escalaOficial", só 1
+     aberto por vez). */
+  attachMobExpandHandlers(()=>{
+    const lista=document.getElementById('escalaOficialLista');
+    if(lista){ lista.innerHTML=renderEscalaOficialLista(); attachEscalaOficialListaHandlers(); }
   });
 }
 function renderPresencaTab(){
@@ -3020,6 +3182,7 @@ function renderAprovacaoGestor(){
 }
 
 /* ================= ETAPA 2 — ESCALA/HORÁRIO POR DIA ================= */
+let mobDiaEscalaHorarioSelecionado=null; // estado mobile: qual dia mostrar por vez (só apresentação — a tabela desktop continua mostrando todos os dias lado a lado, sem "dia selecionado")
 function renderEscalaHorarioDias(){
   if(!gestorUnlocked) return lockScreenHtml('A escala e o horário por dia só ficam visíveis para o gestor.');
   if(!eventoDias.length) return `<div class="empty"><b>Este evento ainda não tem dias gerados</b>Salve novamente o cadastro do evento (data/data fim/horário) para gerar os dias automaticamente.<div class="mono" style="margin-top:10px;font-size:11px;color:var(--muted);">Diagnóstico: evento_id consultado = "${escapeHtml(currentEventId||'')}" · ${ultimoErroEventoDias ? 'erro do Supabase: '+escapeHtml(ultimoErroEventoDias) : 'consulta OK, 0 linhas retornadas (possível RLS bloqueando o papel authenticated)'}</div></div>`;
@@ -3044,11 +3207,20 @@ function renderEscalaHorarioDias(){
   if(!listaExibida.length){
     return `<div class="empty"><b>Nenhum colaborador aprovado ainda</b>Aprove candidatos na Pré-Escala (Escala Oficial) para eles ficarem disponíveis aqui.</div>`;
   }
+  if(!mobDiaEscalaHorarioSelecionado || !eventoDias.some(d=>d.id===mobDiaEscalaHorarioSelecionado)){
+    mobDiaEscalaHorarioSelecionado=eventoDias[0].id;
+  }
 
   return `
     <div class="card-title">Escala por dia</div>
     <div class="card-sub">Marque em quais dias específicos cada colaborador está previsto para trabalhar. Lista de todos os dias do evento lado a lado — não há um único "dia selecionado" nesta tabela.</div>
-    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaHorario" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaHorarioBusca)}"></div>
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobSearchToggle('escalaHorarioMobile', 'Buscar por nome ou CPF', escalaHorarioBusca)}
+    </div>
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobTopTabs(eventoDias.map(d=>({key:String(d.id), label:formatDate(d.data)})), String(mobDiaEscalaHorarioSelecionado))}
+    </div>
+    <div class="field mob-desktop-only" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaEscalaHorario" placeholder="Buscar por nome ou CPF" value="${escapeHtml(escalaHorarioBusca)}"></div>
     <div id="escalaHorarioLista">${renderEscalaHorarioDiasLista(listaExibida)}</div>
     <div class="card-title" style="margin-top:28px;">Dias do evento — horário</div>
     <div class="card-sub">Horário de cada dia — clique em "Editar" para ajustar um dia específico.</div>
@@ -3071,29 +3243,78 @@ function renderEscalaHorarioDiasLista(listaExibida){
   if(!listaFiltrada.length) return `<div class="empty"><b>Nenhum resultado para essa busca</b></div>`;
   const grupos=agruparPorFuncaoPrincipal(listaFiltrada, p=>p.funcao, p=>p.nome);
   const colspanEscala=2+eventoDias.length;
+  const diaMobile=eventoDias.find(d=>d.id===mobDiaEscalaHorarioSelecionado) || eventoDias[0];
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
-    <table>
-      <thead><tr><th>#</th><th>Colaborador</th>${eventoDias.map(d=>`<th>${formatarDataComDiaSemana(d.data)}</th>`).join('')}</tr></thead>
-      <tbody>
-        ${linhasComTituloDeGrupo(grupos, colspanEscala, (p,numero)=>`
-          <tr data-participacao-id="${pid(p)}">
-            <td class="mono">${numero}</td>
-            <td>${escapeHtml(nomeExibicao(p.nome))}</td>
-            ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
-          </tr>`)}
-      </tbody>
-    </table>
+    <div class="desktop-table">
+      <table>
+        <thead><tr><th>#</th><th>Colaborador</th>${eventoDias.map(d=>`<th>${formatarDataComDiaSemana(d.data)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${linhasComTituloDeGrupo(grupos, colspanEscala, (p,numero)=>`
+            <tr data-participacao-id="${pid(p)}">
+              <td class="mono">${numero}</td>
+              <td>${escapeHtml(nomeExibicao(p.nome))}</td>
+              ${eventoDias.map(d=>`<td style="text-align:center;"><label class="checkbox-wrap"><input type="checkbox" class="chk-escala-dia" data-dia-id="${d.id}" ${escaladoNoDia(pid(p), d.id)?'checked':''}></label></td>`).join('')}
+            </tr>`)}
+        </tbody>
+      </table>
+    </div>
+    <div class="mobile-card-list">
+      ${grupos.map(g=>`
+        <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
+        ${g.itens.map(p=>{
+          /* Lista compacta: só checkbox (do dia selecionado nos chips
+             acima) + nome, como pedido. O checkbox marca/desmarca
+             direto, sem precisar expandir — por isso tem
+             stopPropagation() no clique, para não disparar também o
+             toggle de expansão do card. Reaproveita EXATAMENTE
+             escaladoNoDia()/definir_escala_dia (mesma leitura/escrita
+             da tabela desktop), só muda qual dia é mostrado por vez. */
+          const header=`
+            <label class="checkbox-wrap" onclick="event.stopPropagation();" style="margin:0;">
+              <input type="checkbox" class="chk-escala-dia" data-dia-id="${diaMobile.id}" ${escaladoNoDia(pid(p), diaMobile.id)?'checked':''}>
+            </label>
+            <div class="mob-card-main">
+              <div class="mob-card-nome">${escapeHtml(nomeExibicao(p.nome))}</div>
+            </div>`;
+          const body=`
+            <div class="mob-card-linha"><span class="l">CPF</span><span class="v mono">${escapeHtml(p.cpf?formatCpf(p.cpf):'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Função</span><span class="v">${escapeHtml(p.funcao||'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Data</span><span class="v">${escapeHtml(formatarDataComDiaSemana(diaMobile.data))}</span></div>
+            <div class="mob-card-linha"><span class="l">Horário</span><span class="v">${escapeHtml((diaMobile.hora_inicio||'').slice(0,5))} às ${escapeHtml((diaMobile.hora_fim||'').slice(0,5))}</span></div>`;
+          return `<div data-participacao-id="${pid(p)}">${renderMobExpandCard('escalaHorarioDia', pid(p), header, body)}</div>`;
+        }).join('')}
+      `).join('')}
+    </div>
   `;
 }
 function attachEscalaHorarioListaHandlers(){
   document.querySelectorAll('.chk-escala-dia').forEach(chk=>{
     chk.onchange=async ()=>{
-      const tr=chk.closest('tr'); const participacaoId=Number(tr.dataset.participacaoId); const diaId=Number(chk.dataset.diaId);
+      /* Generalizado de .closest('tr') para .closest('[data-participacao-id]')
+         — mesmo atributo já existia na <tr> desktop; agora também
+         existe no wrapper do card mobile, então o mesmo seletor
+         funciona nos dois contextos sem duplicar handler. */
+      const container=chk.closest('[data-participacao-id]'); const participacaoId=Number(container.dataset.participacaoId); const diaId=Number(chk.dataset.diaId);
       const r=await chamarRpcGestor('definir_escala_dia',{p_participacao_id:participacaoId, p_evento_dia_id:diaId, p_escalado:chk.checked});
       if(r.ok){ showToast('Escala atualizada.'); await loadDiasEscalaPresenca(); renderShell(); }
       else { chk.checked=!chk.checked; } // reverte visualmente se o banco recusou (ex: conflito, presença já registrada)
     };
+  });
+  /* FASE B — expansão dos cards mobile (grupo "escalaHorarioDia", só 1
+     aberto por vez). */
+  attachMobExpandHandlers(()=>{
+    const lista=document.getElementById('escalaHorarioLista');
+    if(lista){
+      const algumTemCpfBusca = participacoesNovas.some(p=>p.cpf);
+      let listaExibidaBusca = participacoesNovas;
+      if(algumTemCpfBusca){
+        const cpfsAprovadosBusca = new Set(interessados.filter(i=>(i.status||'pendente')==='aprovado').map(i=>(i.cpf||'').replace(/\D/g,'')));
+        listaExibidaBusca = participacoesNovas.filter(p=>cpfsAprovadosBusca.has((p.cpf||'').replace(/\D/g,'')));
+      }
+      lista.innerHTML=renderEscalaHorarioDiasLista(listaExibidaBusca);
+      attachEscalaHorarioListaHandlers();
+    }
   });
 }
 function attachEscalaHorarioHandlers(){
@@ -3117,6 +3338,28 @@ function attachEscalaHorarioHandlers(){
     }
   };
   attachEscalaHorarioListaHandlers();
+  /* FASE B — busca recolhível mobile (mesma variável/regra de
+     filtro) e chips de dia (troca só o estado de apresentação
+     mobDiaEscalaHorarioSelecionado; NÃO recarrega dados novos, já
+     que a tabela desktop já carrega todos os dias de uma vez). */
+  attachMobSearchHandlers('escalaHorarioMobile', (valor)=>{
+    escalaHorarioBusca=valor;
+    const lista=document.getElementById('escalaHorarioLista');
+    if(lista){
+      const algumTemCpfBusca = participacoesNovas.some(p=>p.cpf);
+      let listaExibidaBusca = participacoesNovas;
+      if(algumTemCpfBusca){
+        const cpfsAprovadosBusca = new Set(interessados.filter(i=>(i.status||'pendente')==='aprovado').map(i=>(i.cpf||'').replace(/\D/g,'')));
+        listaExibidaBusca = participacoesNovas.filter(p=>cpfsAprovadosBusca.has((p.cpf||'').replace(/\D/g,'')));
+      }
+      lista.innerHTML=renderEscalaHorarioDiasLista(listaExibidaBusca);
+      attachEscalaHorarioListaHandlers();
+    }
+  }, ()=>renderShell());
+  attachMobTopTabsHandlers((diaKey)=>{
+    mobDiaEscalaHorarioSelecionado=Number(diaKey);
+    renderShell();
+  });
   document.querySelectorAll('.btn-editar-horario-dia').forEach(btn=>{
     btn.onclick=async ()=>{
       const tr=btn.closest('tr'); const diaId=Number(tr.dataset.diaId);
@@ -3143,13 +3386,19 @@ function renderCheckoutDias(){
   return `
     <div class="card-title">Checkout por dia</div>
     <div class="card-sub">Selecione o dia, registre a entrada e a saída (horário real do servidor). Depois da saída, informe se houve hora extra.</div>
-    <div class="field" style="max-width:280px;">
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobTopTabs(eventoDias.map(d=>({key:String(d.id), label:formatDate(d.data)})), String(diaId))}
+    </div>
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobSearchToggle('checkoutMobile', 'Buscar por nome ou CPF', checkoutBusca)}
+    </div>
+    <div class="field mob-desktop-only" style="max-width:280px;">
       <label>Dia</label>
       <select id="selDiaPresenca">
         ${eventoDias.map(d=>`<option value="${d.id}" ${d.id===diaId?'selected':''}>${formatDate(d.data)} (${(d.hora_inicio||'').slice(0,5)}–${(d.hora_fim||'').slice(0,5)})</option>`).join('')}
       </select>
     </div>
-    <div class="field" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaCheckout" placeholder="Buscar por nome ou CPF" value="${escapeHtml(checkoutBusca)}"></div>
+    <div class="field mob-desktop-only" style="max-width:320px;"><label>Buscar</label><input type="text" id="buscaCheckout" placeholder="Buscar por nome ou CPF" value="${escapeHtml(checkoutBusca)}"></div>
     <div id="checkoutLista">${renderCheckoutDiasLista()}</div>
   `;
 }
@@ -3218,39 +3467,56 @@ function renderCheckoutDiasLista(){
           const temEntrada=pr && pr.entrada_ts;
           const temSaida=pr && pr.saida_ts;
           const anulada=!!p.anulada;
-          return `
-            <div class="mobile-person-card" data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>
-              <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(p.nome))}</div>
-              <div class="mobile-person-main">
-                <div class="mobile-person-name">${escapeHtml(nomeExibicao(p.nome)||'—')}</div>
-                <div class="mobile-person-role">${escapeHtml(p.funcao||'—')}</div>
-                <div class="mobile-person-meta">
-                  CPF: <span class="mono">${escapeHtml(p.cpf||'—')}</span><br>
-                  Entrada: <span class="mobile-checkout-time">${temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</span>
-                  &nbsp; · &nbsp;
-                  Saída: <span class="mobile-checkout-time">${temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—'}</span>
-                </div>
-                <div class="mobile-person-status">
-                  ${anulada?'<span class="badge" style="color:var(--red);border-color:var(--red);">🔴 PARTICIPAÇÃO ANULADA</span>':(temEntrada?'<span class="badge pago">✓ PRESENTE</span>':'<span class="badge pendente">PENDENTE</span>')}
-                  ${temSaida ? `<span class="badge">${horasExtraDe(pr)!=null ? 'Hora extra: '+horasExtraDe(pr)+'h' : 'Hora extra: não informada'}</span>` : ''}
-                </div>
-                <div class="mobile-person-actions">
-                  ${!anulada && !temEntrada ? `<button class="btn btn-teal btn-sm btn-entrada">Registrar entrada</button>` : ''}
-                  ${!anulada && temEntrada && !temSaida ? `<button class="btn btn-amber btn-sm btn-saida">Registrar saída</button>` : ''}
-                  ${!anulada && temSaida && (horasExtraDe(pr)==null) && !horasExtraAguardandoQtd.has(pid(p)) ? `
-                    <button class="btn btn-teal btn-sm btn-hora-extra-sim">Hora extra: Sim</button>
-                    <button class="btn btn-ghost btn-sm btn-hora-extra-nao">Hora extra: Não</button>` : ''}
-                  ${!anulada && temSaida && (horasExtraDe(pr)==null) && horasExtraAguardandoQtd.has(pid(p)) ? `
-                    <input type="number" class="input-qtd-hora-extra mono" min="0" step="1" style="width:90px;" placeholder="Horas">
-                    <button class="btn btn-teal btn-sm btn-confirmar-hora-extra">Confirmar</button>` : ''}
-                  ${!anulada && temSaida && (horasExtraDe(pr)!=null) ? `<button class="btn btn-ghost btn-sm btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
-                  ${!anulada && temEntrada && eventoAberto ? `<button class="btn btn-danger btn-sm btn-anular-participacao">Anular participação</button>` : ''}
-                  ${anulada && eventoAberto ? `<button class="btn btn-ghost btn-sm btn-restaurar-participacao">Restaurar participação</button>` : ''}
-                </div>
-                ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--muted);margin-top:6px;">Evento finalizado — situação travada</div>` : ''}
-              </div>
-              <div class="mobile-card-arrow">›</div>
-            </div>`;
+          const horasExtraJaConfirmada=horasExtraDe(pr)!=null;
+          const aguardandoQtd=horasExtraAguardandoQtd.has(pid(p));
+          /* Card compacto: nome + AÇÃO PRINCIPAL do estado atual (regra
+             9 — fica sempre visível, sem precisar expandir). Se o
+             colaborador estiver no meio do fluxo de hora extra
+             (aguardando a quantidade, já clicou "Sim"), o card já
+             aparece pré-expandido para não perder o contexto — usando
+             o MESMO mecanismo de expansão (mobExpandedPorGrupo), sem
+             criar um segundo estado paralelo. */
+          if(aguardandoQtd) mobExpandedPorGrupo['checkout']=String(pid(p));
+          const horaEntradaTxt=temEntrada?new Date(pr.entrada_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—';
+          const horaSaidaTxt=temSaida?new Date(pr.saida_ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'—';
+          let acaoPrincipalHtml='';
+          if(anulada){
+            acaoPrincipalHtml=`<span class="mob-badge mob-badge-red">Anulada</span>`;
+          } else if(!temEntrada){
+            acaoPrincipalHtml=`<button class="mob-btn mob-btn-primary btn-entrada">REGISTRAR ENTRADA</button>`;
+          } else if(!temSaida){
+            acaoPrincipalHtml=`<button class="mob-btn mob-btn-primary btn-saida">Registrar saída</button>`;
+          } else if(!horasExtraJaConfirmada){
+            acaoPrincipalHtml=`<span class="mob-badge mob-badge-amber">Solicitar hora extra</span>`;
+          } else {
+            acaoPrincipalHtml=`<span class="mob-badge mob-badge-green">${horasExtraDe(pr)}h extra</span>`;
+          }
+          const header=`
+            ${renderMobAvatar(p.nome, p.foto_url)}
+            <div class="mob-card-main">
+              <div class="mob-card-nome">${escapeHtml(nomeExibicao(p.nome)||'—')}</div>
+              ${temEntrada ? `<div class="mob-card-sub">Entrada: ${horaEntradaTxt}${temSaida?' · Saída: '+horaSaidaTxt:''}</div>` : ''}
+            </div>
+            ${acaoPrincipalHtml}`;
+          const body=`
+            <div class="mob-card-linha"><span class="l">CPF</span><span class="v mono">${escapeHtml(p.cpf?formatCpf(p.cpf):'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Função</span><span class="v">${escapeHtml(p.funcao||'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Telefone</span><span class="v">${p.telefone?escapeHtml(formatTelefone(p.telefone)):'—'}</span></div>
+            <div class="mob-card-linha"><span class="l">Situação</span><span class="v">${anulada?'🔴 Anulada':(temEntrada?'✓ Presente':'Pendente')}</span></div>
+            <div class="mob-card-acoes">
+              ${!anulada && temSaida && !horasExtraJaConfirmada && !aguardandoQtd ? `
+                <span style="font-size:12px;color:var(--mob-muted);width:100%;">Fez hora extra?</span>
+                <button class="mob-btn btn-hora-extra-sim">Sim</button>
+                <button class="mob-btn btn-hora-extra-nao">Não</button>` : ''}
+              ${!anulada && temSaida && !horasExtraJaConfirmada && aguardandoQtd ? `
+                <input type="number" class="input-qtd-hora-extra mono mob-btn" min="0" step="1" style="width:90px;text-align:center;" placeholder="Horas">
+                <button class="mob-btn mob-btn-primary btn-confirmar-hora-extra">Confirmar</button>` : ''}
+              ${!anulada && temSaida && horasExtraJaConfirmada ? `<button class="mob-btn btn-corrigir-hora-extra">Corrigir hora extra</button>` : ''}
+              ${!anulada && temEntrada && eventoAberto ? `<button class="mob-btn btn-anular-participacao" style="color:var(--mob-red);border-color:var(--mob-red);">Anular participação</button>` : ''}
+              ${anulada && eventoAberto ? `<button class="mob-btn btn-restaurar-participacao">Restaurar participação</button>` : ''}
+            </div>
+            ${!eventoAberto && (anulada || temEntrada) ? `<div style="font-size:11px;color:var(--mob-muted);margin-top:6px;">Evento finalizado — situação travada</div>` : ''}`;
+          return `<div data-participacao-id="${pid(p)}" ${anulada?'style="opacity:0.6;"':''}>${renderMobExpandCard('checkout', pid(p), header, body)}</div>`;
         }).join('')}
       `).join('')}
     </div>
@@ -3259,14 +3525,21 @@ function renderCheckoutDiasLista(){
 let horasExtraAguardandoQtd = new Set(); // ids (pid) com o campo de quantidade aberto na tela, transitório
 function attachCheckoutListaHandlers(){
   document.querySelectorAll('.btn-entrada').forEach(btn=>{
-    btn.onclick=async ()=>{
+    btn.onclick=async (e)=>{
+      /* stopPropagation: este botão agora pode estar dentro do
+         cabeçalho clicável do card mobile (que expande/fecha ao
+         clicar) — sem isso, clicar em "Registrar entrada" também
+         acionaria o toggle de expansão. Não afeta o botão na tabela
+         desktop (lá não há nenhum onclick de expansão no ancestral). */
+      if(e && e.stopPropagation) e.stopPropagation();
       const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       const r=await chamarRpcGestor('registrar_entrada_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
       if(r.ok){ showToast('Entrada registrada.'); await loadDiasEscalaPresenca(); renderShell(); }
     };
   });
   document.querySelectorAll('.btn-saida').forEach(btn=>{
-    btn.onclick=async ()=>{
+    btn.onclick=async (e)=>{
+      if(e && e.stopPropagation) e.stopPropagation();
       const participacaoId=Number(btn.closest('[data-participacao-id]').dataset.participacaoId);
       const r=await chamarRpcGestor('registrar_saida_presenca',{p_participacao_id:participacaoId, p_evento_dia_id:diaSelecionadoPresenca});
       if(!r.ok) return;
@@ -3331,6 +3604,13 @@ function attachCheckoutListaHandlers(){
       const r=await chamarRpcGestor('restaurar_participacao_evento',{p_participacao_id:participacaoId});
       if(r.ok){ showToast('Participação restaurada.'); await loadDiasEscalaPresenca(); renderShell(); }
     };
+  });
+  /* FASE B — expansão dos cards mobile (grupo "checkout", só 1
+     aberto por vez; pode já vir pré-expandido quando o colaborador
+     está no meio do fluxo de hora extra — ver renderCheckoutDiasLista). */
+  attachMobExpandHandlers(()=>{
+    const lista=document.getElementById('checkoutLista');
+    if(lista){ lista.innerHTML=renderCheckoutDiasLista(); attachCheckoutListaHandlers(); }
   });
 }
 /* ================= ANULAR PARTICIPAÇÃO =================
@@ -3412,6 +3692,19 @@ function attachCheckoutHandlers(){
     if(lista){ lista.innerHTML=renderCheckoutDiasLista(); attachCheckoutListaHandlers(); }
   };
   attachCheckoutListaHandlers();
+  /* FASE B — chips de dia mobile (mesma variável diaSelecionadoPresenca
+     já usada pelo <select> desktop e por toda a lógica de checkout) e
+     busca recolhível mobile (mesma checkoutBusca/filtro). */
+  attachMobTopTabsHandlers((diaKey)=>{
+    diaSelecionadoPresenca=Number(diaKey);
+    horasExtraAguardandoQtd.clear();
+    renderShell();
+  });
+  attachMobSearchHandlers('checkoutMobile', (valor)=>{
+    checkoutBusca=valor;
+    const lista=document.getElementById('checkoutLista');
+    if(lista){ lista.innerHTML=renderCheckoutDiasLista(); attachCheckoutListaHandlers(); }
+  }, ()=>renderShell());
 }
 
 /* ================= ETAPA 2 — FECHAMENTO FINANCEIRO ================= */
@@ -5105,32 +5398,33 @@ function renderCpfsAutorizadosLista(lista){
     <div class="mobile-card-list">
       ${grupos.map(g=>`
         <div class="mobile-card-group-title">${escapeHtml(g.funcao)} — ${g.itens.length} colaborador${g.itens.length!==1?'es':''}</div>
-        ${g.itens.map(c=>`
-          <div class="mobile-person-card" data-cpf="${c.cpf}">
-            <div class="mobile-person-avatar" aria-label="Foto do colaborador">${escapeHtml(iniciaisNome(c.nome))}</div>
-            <div class="mobile-person-main">
-              <div class="mobile-person-name">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
-              <div class="mobile-person-role">${escapeHtml(c.funcao||'—')}</div>
-              <div class="mobile-person-meta">CPF: <span class="mono">${formatCpf(c.cpf)}</span></div>
-              <div class="mobile-person-status">
-                <span class="badge ${c.autorizado?'pago':'pendente'}">${c.autorizado?'🟢 AUTORIZADO':'🔴 DESAUTORIZADO'}</span>
-                ${c.cadastro_concluido ? '<span class="badge pago">Cadastro concluído</span>' : ''}
-              </div>
-              <div class="mobile-person-actions">
-                <button class="btn btn-ghost btn-sm btn-editar-cpf-aut">Editar</button>
-                ${c.autorizado
-                  ? `<button class="btn btn-danger btn-sm btn-desautorizar">Desautorizar</button>`
-                  : `<button class="btn btn-teal btn-sm btn-reativar">Reativar</button>`}
-                <button class="btn btn-danger btn-sm btn-excluir-cpf-aut">Excluir</button>
-              </div>
+        ${g.itens.map(c=>{
+          const header=`
+            ${renderMobAvatar(c.nome, c.foto_url)}
+            <div class="mob-card-main">
+              <div class="mob-card-nome">${escapeHtml(nomeExibicao(c.nome)||'—')}</div>
+              <div class="mob-card-sub">${escapeHtml(c.funcao||'—')} · ${c.autorizado?'AUTORIZADO':'DESAUTORIZADO'}</div>
             </div>
-            <div class="mobile-card-arrow">›</div>
-          </div>
-        `).join('')}
+            <span class="mob-badge ${c.autorizado?'mob-badge-green':'mob-badge-red'}">${c.autorizado?'Autorizado':'Desautorizado'}</span>`;
+          const body=`
+            <div class="mob-card-linha"><span class="l">CPF</span><span class="v mono">${formatCpf(c.cpf)}</span></div>
+            <div class="mob-card-linha"><span class="l">Função</span><span class="v">${escapeHtml(c.funcao||'—')}</span></div>
+            <div class="mob-card-linha"><span class="l">Telefone</span><span class="v">${c.telefone?escapeHtml(formatTelefone(c.telefone)):'—'}</span></div>
+            ${c.cadastro_concluido ? `<div class="mob-card-linha"><span class="l">Cadastro</span><span class="v">Concluído</span></div>` : ''}
+            <div class="mob-card-acoes">
+              <button class="mob-btn btn-editar-cpf-aut">Editar</button>
+              ${c.autorizado
+                ? `<button class="mob-btn btn-desautorizar" style="color:var(--mob-red);border-color:var(--mob-red);">Desautorizar</button>`
+                : `<button class="mob-btn btn-reativar" style="color:var(--mob-green);border-color:var(--mob-green);">Reativar</button>`}
+              <button class="mob-btn btn-excluir-cpf-aut" style="color:var(--mob-red);border-color:var(--mob-red);">Excluir cadastro</button>
+            </div>`;
+          return `<div data-cpf="${c.cpf}">${renderMobExpandCard('cpfAutorizado', c.cpf, header, body)}</div>`;
+        }).join('')}
       `).join('')}
     </div>
   `;
 }
+let mobFormCpfAutAberto=false; // estado mobile: formulário "+ Autorizar CPF" fechado por padrão
 function renderCpfsAutorizadosTab(){
   if(!gestorUnlocked) return lockScreenHtml('A gestão de CPFs autorizados só fica visível para o gestor.');
   const ev=currentEvent();
@@ -5138,22 +5432,28 @@ function renderCpfsAutorizadosTab(){
   return `
     <div class="card-title">CPFs autorizados neste evento</div>
     <div class="card-sub">A autorização pertence sempre a este evento (CPF + evento + função) — o mesmo CPF pode estar autorizado aqui e não autorizado em outro evento.</div>
-    <div class="add-row">
-      <div class="field"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
-      <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
-      <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
-      <div class="field">
-        <label>Função</label>
-        ${funcoesEvento.length ? `
-        <select id="novaFuncaoAutSelect">
-          <option value="">Selecione a função</option>
-          ${funcoesEvento.map(f=>`<option value="${escapeHtml(f.funcao)}">${escapeHtml(f.funcao)}</option>`).join('')}
-          <option value="__outra__">+ Outra função (digitar)</option>
-        </select>
-        <input type="text" id="novaFuncaoAutTexto" placeholder="Digite a função" style="display:none; margin-top:6px;">
-        ` : `<input type="text" id="novaFuncaoAutTexto" placeholder="Ex: Vigilante">`}
+    <div class="mob-only-block" style="margin-bottom:10px;">
+      ${renderMobSearchToggle('cpfAutorizadoMobile', 'CPF ou nome', cpfsAutorizadosBusca)}
+    </div>
+    <div class="add-row mob-form-toggle-wrap ${mobFormCpfAutAberto?'mob-form-open':''}">
+      <button type="button" class="mob-btn mob-btn-primary mob-btn-abrir-form" id="btnAbrirFormCpfAutMobile">+ AUTORIZAR CPF</button>
+      <div class="field mob-desktop-only"><label>Buscar</label><input type="text" id="buscaCpfAutorizado" placeholder="CPF ou nome" value="${escapeHtml(cpfsAutorizadosBusca)}"></div>
+      <div class="mob-form-fields">
+        <div class="field"><label>CPF</label><input type="text" id="novoCpfAut" placeholder="000.000.000-00" maxlength="14"></div>
+        <div class="field"><label>Nome (opcional)</label><input type="text" id="novoNomeAut" placeholder="Nome"></div>
+        <div class="field">
+          <label>Função</label>
+          ${funcoesEvento.length ? `
+          <select id="novaFuncaoAutSelect">
+            <option value="">Selecione a função</option>
+            ${funcoesEvento.map(f=>`<option value="${escapeHtml(f.funcao)}">${escapeHtml(f.funcao)}</option>`).join('')}
+            <option value="__outra__">+ Outra função (digitar)</option>
+          </select>
+          <input type="text" id="novaFuncaoAutTexto" placeholder="Digite a função" style="display:none; margin-top:6px;">
+          ` : `<input type="text" id="novaFuncaoAutTexto" placeholder="Ex: Vigilante">`}
+        </div>
+        <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
       </div>
-      <button class="btn btn-amber" id="btnAddCpfAut">+ Autorizar CPF</button>
     </div>
     <div id="cpfsAutorizadosTabela">${renderCpfsAutorizadosLista(filtrarCpfsAutorizados())}</div>
   `;
@@ -5247,6 +5547,24 @@ function attachCpfsAutorizadosHandlers(){
     if(r.ok){ showToast('CPF autorizado.'); await loadCpfsAutorizadosEvento(); renderShell(); }
   };
   attachCpfsAutorizadosRowHandlers();
+
+  /* FASE B — busca recolhível mobile e toggle do formulário
+     "+ Autorizar CPF". Reaproveita attachMobSearchHandlers da Fase A;
+     o input mobile atualiza a MESMA variável cpfsAutorizadosBusca e
+     usa a MESMA filtrarCpfsAutorizados() já usada pela busca desktop
+     — nenhuma lógica de filtro nova. */
+  attachMobSearchHandlers('cpfAutorizadoMobile', (valor)=>{
+    cpfsAutorizadosBusca=valor;
+    const tabela=document.getElementById('cpfsAutorizadosTabela');
+    if(tabela){ tabela.innerHTML=renderCpfsAutorizadosLista(filtrarCpfsAutorizados()); attachCpfsAutorizadosRowHandlers(); }
+  }, ()=>{
+    renderShell();
+  });
+  const btnAbrirFormMobile=document.getElementById('btnAbrirFormCpfAutMobile');
+  if(btnAbrirFormMobile) btnAbrirFormMobile.onclick=()=>{
+    mobFormCpfAutAberto=true;
+    renderShell();
+  };
 }
 function attachCpfsAutorizadosRowHandlers(){
   document.querySelectorAll('.btn-editar-cpf-aut').forEach(btn=>{
@@ -5305,6 +5623,15 @@ function attachCpfsAutorizadosRowHandlers(){
         renderShell();
       }
     };
+  });
+  /* FASE B — expansão dos cards mobile (só um aberto por vez, dentro
+     do grupo "cpfAutorizado"). Reaproveita attachMobExpandHandlers da
+     Fase A; ao alternar, só precisa re-renderizar esta mesma lista
+     (não a tela toda), preservando o que estiver digitado no
+     formulário/busca. */
+  attachMobExpandHandlers(()=>{
+    const tabela=document.getElementById('cpfsAutorizadosTabela');
+    if(tabela){ tabela.innerHTML=renderCpfsAutorizadosLista(filtrarCpfsAutorizados()); attachCpfsAutorizadosRowHandlers(); }
   });
 }
 
@@ -5522,6 +5849,22 @@ function attachDetailHandlers(){
   const linkBtnStatus=document.getElementById('btnCopyLinkStatus');
   if(linkBtnStatus) linkBtnStatus.onclick=()=>copyText(eventLinkStatus(currentEventId));
 
+  /* FASE B — botão mobile de copiar link, reaproveitando a MESMA
+     fonte do link (eventLink(currentEventId)) já usada pelo botão
+     desktop; só o texto do toast muda, conforme pedido. */
+  const linkBtnMobile=document.getElementById('btnCopyLinkMobile');
+  if(linkBtnMobile) linkBtnMobile.onclick=()=>{
+    const link=eventLink(currentEventId);
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(link).then(()=>showToast('✓ Link de convocação copiado!')).catch(()=>fallbackCopy(link));
+    } else fallbackCopy(link);
+  };
+  attachMobSearchHandlers('preEscalaMobile', (valor)=>{
+    preEscalaBusca=valor;
+    const lista=document.getElementById('preEscalaLista');
+    if(lista){ lista.innerHTML=renderPreEscalaLista(); attachPreEscalaListaHandlers(); }
+  }, ()=>renderShell());
+
   const buscaPreEscalaInp=document.getElementById('buscaPreEscala');
   if(buscaPreEscalaInp) buscaPreEscalaInp.oninput=()=>{
     // Nunca recriar o próprio campo de busca — só atualiza o container
@@ -5535,6 +5878,19 @@ function attachDetailHandlers(){
     escalaOficialBusca=buscaEscalaOficialInp.value;
     const lista=document.getElementById('escalaOficialLista');
     if(lista){ lista.innerHTML=renderEscalaOficialLista(); attachEscalaOficialListaHandlers(); }
+  };
+  /* FASE B — busca recolhível mobile (mesma variável/lógica de
+     filtro da busca desktop) e toggle do formulário "+ Adicionar
+     Manualmente" — mesmo padrão já usado em CPF Autorizado. */
+  attachMobSearchHandlers('escalaOficialMobile', (valor)=>{
+    escalaOficialBusca=valor;
+    const lista=document.getElementById('escalaOficialLista');
+    if(lista){ lista.innerHTML=renderEscalaOficialLista(); attachEscalaOficialListaHandlers(); }
+  }, ()=>renderShell());
+  const btnAbrirFormEscalaOficialMobile=document.getElementById('btnAbrirFormEscalaOficialMobile');
+  if(btnAbrirFormEscalaOficialMobile) btnAbrirFormEscalaOficialMobile.onclick=()=>{
+    mobFormEscalaOficialAberto=true;
+    renderShell();
   };
 
   const btnNewFuncaoEvento=document.getElementById('btnNewFuncaoEvento');
@@ -5817,6 +6173,115 @@ function attachDetailHandlers(){
     renderShell();
     showToast('Evento reaberto para ajustes.');
   };
+}
+
+/* ==========================================================================
+   FASE A — COMPONENTES MOBILE REUTILIZÁVEIS (Samseg app)
+   ==========================================================================
+   Funções NOVAS, com nomes próprios (prefixo "renderMob"/"attachMob"/"mob"),
+   que não colidem com nenhuma função existente. NENHUMA delas é chamada por
+   nenhuma tela ainda — por isso não têm efeito nenhum sobre o comportamento
+   atual do sistema (web ou mobile) nesta rodada. Serão conectadas às 5 telas
+   operacionais na Fase B, reaproveitando os MESMOS dados/arrays que cada tela
+   já usa hoje — nenhuma lógica de negócio, cálculo, RPC ou dado é tocado por
+   este bloco. */
+
+/* ---- A) Barra inferior mobile (Início/CPFs/Escala/Checkout/Mais) ---- */
+const MOB_BOTTOMNAV_ITENS=[
+  {key:'inicio', icon:'🏠', label:'Início'},
+  {key:'cpfs', icon:'📋', label:'CPFs'},
+  {key:'escala', icon:'📅', label:'Escala'},
+  {key:'checkout', icon:'✅', label:'Checkout'},
+  {key:'mais', icon:'⋯', label:'Mais'},
+];
+function renderMobBottomNav(activeKey){
+  return `<div class="mob-bottomnav">${MOB_BOTTOMNAV_ITENS.map(it=>`
+    <div class="mob-nav-item ${activeKey===it.key?'active':''}" data-mobnav="${it.key}">
+      <span class="mob-nav-icon">${it.icon}</span><span class="mob-nav-label">${escapeHtml(it.label)}</span>
+    </div>`).join('')}</div>`;
+}
+function attachMobBottomNavHandlers(onSelect){
+  document.querySelectorAll('[data-mobnav]').forEach(el=>{
+    el.onclick=()=>{ if(typeof onSelect==='function') onSelect(el.dataset.mobnav); };
+  });
+}
+
+/* ---- B) Navegação superior do evento (abas) ---- */
+function renderMobTopTabs(tabs, activeKey){
+  return `<div class="mob-toptabs">${tabs.map(t=>`
+    <div class="mob-toptab ${t.key===activeKey?'active':''}" data-mobtab="${escapeHtml(t.key)}">${escapeHtml(t.label)}</div>`).join('')}</div>`;
+}
+function attachMobTopTabsHandlers(onSelect){
+  document.querySelectorAll('[data-mobtab]').forEach(el=>{
+    el.onclick=()=>{ if(typeof onSelect==='function') onSelect(el.dataset.mobtab); };
+  });
+}
+
+/* ---- C) Expansão de funcionário (card compacto -> expandido) ----
+   Estado guardado por "grupo" (cada tela usa sua própria chave, ex.:
+   'cpfAutorizado', 'escalaOficial'), para uma tela não interferir na
+   outra. Dentro de cada grupo, só um id fica expandido por vez. */
+let mobExpandedPorGrupo={};
+function mobToggleExpand(grupo, id){
+  const idStr=String(id);
+  mobExpandedPorGrupo[grupo] = (mobExpandedPorGrupo[grupo]===idStr) ? null : idStr;
+}
+function mobIsExpanded(grupo, id){
+  return mobExpandedPorGrupo[grupo]===String(id);
+}
+/* headerHtml/bodyHtml são fornecidos por quem chama (Fase B) — esta
+   função só monta a casca do card e decide se o corpo aparece, nunca
+   decide o CONTEÚDO (que continua vindo dos mesmos dados/telas atuais). */
+function renderMobExpandCard(grupo, id, headerHtml, bodyHtml){
+  const aberto=mobIsExpanded(grupo, id);
+  return `
+    <div class="mob-card" data-mobexpand-grupo="${escapeHtml(grupo)}" data-mobexpand-id="${escapeHtml(String(id))}">
+      <div class="mob-card-header" data-mobexpand-toggle="1">${headerHtml}</div>
+      ${aberto ? `<div class="mob-card-body">${bodyHtml}</div>` : ''}
+    </div>`;
+}
+function attachMobExpandHandlers(onToggle){
+  document.querySelectorAll('[data-mobexpand-toggle]').forEach(el=>{
+    el.onclick=()=>{
+      const card=el.closest('[data-mobexpand-grupo]');
+      if(!card) return;
+      mobToggleExpand(card.dataset.mobexpandGrupo, card.dataset.mobexpandId);
+      if(typeof onToggle==='function') onToggle(card.dataset.mobexpandGrupo, card.dataset.mobexpandId);
+    };
+  });
+}
+
+/* ---- D) Busca recolhível ("🔎 Buscar" -> campo ao clicar) ----
+   Estado guardado por searchId (cada busca da tela usa sua própria
+   chave), para várias buscas coexistirem sem conflito. */
+let mobSearchAberta={};
+function renderMobSearchToggle(searchId, placeholder, valorAtual){
+  const aberto=!!mobSearchAberta[searchId];
+  if(!aberto){
+    return `<button class="mob-btn mob-btn-ghost" data-mobsearch-open="${escapeHtml(searchId)}">🔎 Buscar</button>`;
+  }
+  return `<div class="mob-search-open">
+    <input type="text" class="mob-search-input" data-mobsearch-input="${escapeHtml(searchId)}" placeholder="${escapeHtml(placeholder||'Buscar')}" value="${escapeHtml(valorAtual||'')}">
+    <button class="mob-btn mob-btn-ghost" data-mobsearch-close="${escapeHtml(searchId)}" style="min-height:32px;padding:6px 10px;">✕</button>
+  </div>`;
+}
+function attachMobSearchHandlers(searchId, onInput, onToggle){
+  document.querySelectorAll(`[data-mobsearch-open="${searchId}"]`).forEach(btn=>{
+    btn.onclick=()=>{ mobSearchAberta[searchId]=true; if(typeof onToggle==='function') onToggle(); };
+  });
+  document.querySelectorAll(`[data-mobsearch-close="${searchId}"]`).forEach(btn=>{
+    btn.onclick=()=>{ mobSearchAberta[searchId]=false; if(typeof onToggle==='function') onToggle(); };
+  });
+  document.querySelectorAll(`[data-mobsearch-input="${searchId}"]`).forEach(inp=>{
+    inp.oninput=()=>{ if(typeof onInput==='function') onInput(inp.value); };
+  });
+}
+
+/* ---- E) Avatar/iniciais (foto quando existir, senão iniciais) ---- */
+function renderMobAvatar(nome, fotoUrl){
+  if(fotoUrl) return `<div class="mob-avatar"><img src="${escapeHtml(fotoUrl)}" alt=""></div>`;
+  const iniciais=(nomeExibicao(nome)||'').trim().split(/\s+/).slice(0,2).map(p=>p[0]||'').join('').toUpperCase();
+  return `<div class="mob-avatar">${escapeHtml(iniciais||'?')}</div>`;
 }
 
 /* ================= INIT ================= */
