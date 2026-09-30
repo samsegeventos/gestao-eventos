@@ -538,7 +538,15 @@
   .public-header{display:flex; align-items:center; gap:10px; justify-content:center; padding:24px 0 0;}
 
   @media print{
-    .sidebar,.mobile-topbar,.event-bar,.subtabs,.add-row,.btn,.toolbar,.link-box{display:none !important;}
+    /* CORREÇÃO — .event-mobile-nav (navegação mobile com ícones:
+       VALORES/CPFs/PRÉ-ESCALA/ESCALA/ESCALA-DIA/CHECKOUT/FECHAMENTO/
+       APROVAÇÃO/CRACHÁS) e .event-mobile-section-title (título mobile
+       da aba, ex.: "Aprovação do Gestor") nunca tinham sido incluídos
+       aqui — só existiam desde a adaptação mobile geral do sistema,
+       anterior a esta lista. Mesma técnica já usada para os demais
+       elementos de interface (.sidebar, .event-bar, .subtabs etc.):
+       display:none só na impressão, tela normal intocada. */
+    .sidebar,.mobile-topbar,.event-bar,.subtabs,.add-row,.btn,.toolbar,.link-box,.event-mobile-nav,.event-mobile-section-title{display:none !important;}
     body{background:#fff; color:#000;}
     .main{padding:0;}
     .panel{border:none; background:#fff; padding:0;}
@@ -695,7 +703,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 18:45';
+const APP_VERSION = '19/09/2026 19:00';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
