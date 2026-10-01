@@ -2678,130 +2678,218 @@ async function openEvent(id){
   renderShell();
 }
 
+/* ETAPA 1 — formulário de evento agora é um MODAL real (antes era uma
+   sequência de prompt()/askDate() nativos). Mesmo padrão de modal já
+   usado em outras telas do sistema (.modal-overlay/.modal-box), já
+   responsivo em mobile. Preserva: horaInicio/horaFim como campos
+   SEPARADOS (nunca unificados), a mesma validação de data/hora
+   completa (instante de término > instante de início), e a mesma
+   lógica de linkValidoAte "acompanha a data de término quando não
+   customizado". Novos campos (tipoEvento, cidadeEvento, cepEvento,
+   localEvento, enderecoEvento) são só novas chaves dentro do MESMO
+   objeto já salvo em eventos.dados — nenhuma tabela/estrutura nova no
+   Supabase. Eventos antigos sem esses campos: aparecem vazios ao
+   editar, nunca inventados. */
 function openEventForm(existing){
-  let clienteNome = existing ? existing.cliente : '';
-  if(clients.length){
-    const listagem = clients.map((c,i)=>`${i+1}. ${c.nome}`).join('\n');
-    const escolha = prompt(`Escolha o cliente pelo número ou digite um nome novo:\n${listagem}`, clienteNome);
-    if(escolha===null) return;
-    const idx = parseInt(escolha,10);
-    if(!isNaN(idx) && clients[idx-1]) clienteNome = clients[idx-1].nome;
-    else clienteNome = escolha.trim();
-  } else {
-    const c = prompt('Nome do cliente:', clienteNome);
-    if(c===null) return;
-    clienteNome = c.trim();
+  const modalId='modalEvento';
+  const modalJaAberto=document.getElementById(modalId);
+  if(modalJaAberto) modalJaAberto.remove(); // evita 2 modais empilhados em caso de clique duplo
+  const overlay=document.createElement('div');
+  overlay.id=modalId;
+  overlay.className='modal-overlay';
+  const clienteAtualNaoEstaNaLista = existing && existing.cliente && !clients.some(c=>c.nome===existing.cliente);
+  overlay.innerHTML=`
+    <div class="modal-box" style="max-width:560px;">
+      <div class="card-title">${existing?'Editar Evento':'Adicionar Evento'}</div>
+
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:14px 0 4px;">Dados do Evento</div>
+      <div class="field"><label>Nome do Evento *</label><input type="text" id="evNome" value="${existing?escapeHtml(existing.evento||''):''}"></div>
+      <div class="field"><label>Cliente *</label>
+        ${clients.length ? `
+        <select id="evClienteSelect">
+          <option value="">Selecione o cliente</option>
+          ${clients.map(c=>`<option value="${escapeHtml(c.nome)}" ${existing&&existing.cliente===c.nome?'selected':''}>${escapeHtml(c.nome)}</option>`).join('')}
+          <option value="__outro__" ${clienteAtualNaoEstaNaLista?'selected':''}>+ Outro cliente (digitar)</option>
+        </select>
+        <input type="text" id="evClienteTexto" placeholder="Digite o nome do cliente" style="margin-top:6px; display:${clienteAtualNaoEstaNaLista?'block':'none'};" value="${clienteAtualNaoEstaNaLista?escapeHtml(existing.cliente):''}">
+        ` : `<input type="text" id="evClienteTexto" placeholder="Nome do cliente" value="${existing?escapeHtml(existing.cliente||''):''}">`}
+      </div>
+      <div class="field"><label>Tipo do Evento *</label><input type="text" id="evTipo" placeholder="Ex: Festa Junina" value="${existing?escapeHtml(existing.tipoEvento||''):''}"></div>
+
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Data do Evento</div>
+      <div class="field"><label>Data de Início do Evento *</label><input type="date" id="evDataInicio" value="${existing?(existing.data||''):''}"></div>
+      <div class="field"><label>Data Final do Evento *</label><input type="date" id="evDataFim" value="${existing?(existing.dataFim||''):''}"></div>
+
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Horário do Evento</div>
+      <div class="field"><label>Horário de Início do Evento *</label><input type="time" id="evHoraInicio" value="${existing?(existing.horaInicio||''):''}"></div>
+      <div class="field"><label>Horário de Término do Evento *</label><input type="time" id="evHoraFim" value="${existing?(existing.horaFim||''):''}"></div>
+
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Local do Evento</div>
+      <div class="field"><label>Cidade do Evento *</label><input type="text" id="evCidade" value="${existing?escapeHtml(existing.cidadeEvento||''):''}"></div>
+      <div class="field"><label>CEP do Evento *</label><input type="text" id="evCep" placeholder="00.000-000" value="${existing?escapeHtml(existing.cepEvento||''):''}"></div>
+      <div class="field"><label>Local do Evento *</label><input type="text" id="evLocal" placeholder="Ex: SESI" value="${existing?escapeHtml(existing.localEvento||''):''}"></div>
+      <div class="field"><label>Endereço do Evento *</label><textarea id="evEndereco" rows="2">${existing?escapeHtml(existing.enderecoEvento||''):''}</textarea></div>
+
+      <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Link de Convocação</div>
+      <div class="field"><label>Validade do Link do Evento (opcional — prazo para registrar interesse; acompanha a data final se deixado em branco)</label><input type="date" id="evLinkValidoAte" value="${existing?(existing.linkValidoAte||''):''}"></div>
+
+      <div id="evFormErro" style="color:var(--red); font-size:13px; margin-top:10px; white-space:pre-line;"></div>
+      <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:16px;">
+        <button class="btn btn-ghost" id="evFormCancelar">Cancelar</button>
+        <button class="btn btn-teal" id="evFormSalvar" disabled>Salvar Evento</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  const campoNome=document.getElementById('evNome');
+  const selCliente=document.getElementById('evClienteSelect');
+  const campoClienteTexto=document.getElementById('evClienteTexto');
+  const campoTipo=document.getElementById('evTipo');
+  const campoDataInicio=document.getElementById('evDataInicio');
+  const campoDataFim=document.getElementById('evDataFim');
+  const campoHoraInicio=document.getElementById('evHoraInicio');
+  const campoHoraFim=document.getElementById('evHoraFim');
+  const campoCidade=document.getElementById('evCidade');
+  const campoCep=document.getElementById('evCep');
+  const campoLocal=document.getElementById('evLocal');
+  const campoEndereco=document.getElementById('evEndereco');
+  const btnSalvar=document.getElementById('evFormSalvar');
+  const erroBox=document.getElementById('evFormErro');
+
+  if(selCliente) selCliente.onchange=()=>{ campoClienteTexto.style.display = selCliente.value==='__outro__' ? 'block' : 'none'; atualizarEstadoBotao(); };
+
+  /* Lista dos 11 campos obrigatórios desta etapa — usada tanto para
+     habilitar/desabilitar o botão quanto para a validação real no
+     submit (nunca confia só no atributo disabled do botão). */
+  function obterNomeCliente(){
+    if(selCliente) return selCliente.value==='__outro__' ? campoClienteTexto.value.trim() : selCliente.value;
+    return campoClienteTexto.value.trim();
   }
-  const evento=prompt('Nome do evento:', existing?existing.evento:'');
-  if(evento===null) return;
-  if(!clienteNome || !evento.trim()){ showToast('Preencha cliente e evento.'); return; }
-
-  const dataInicioDefault = existing ? existing.data : null;
-const dataInicio = askDate('Data de início do evento (DD/MM/AAAA):', dataInicioDefault);
-if(dataInicio===undefined) return;
-
-const horaInicioDefault = existing ? existing.horaInicio : '';
-const horaInicioRaw = prompt('Horário de início do evento (HH:MM):', horaInicioDefault);
-if(horaInicioRaw===null) return;
-const horaInicio = normalizarHora(horaInicioRaw);
-
-if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaInicio.trim())){
-  showToast('Horário de início inválido. Use HH:MM.');
-  return;
-}
-
-const dataFimDefault = existing ? existing.dataFim : dataInicio;
-const dataFim = askDate(
-  'Data de término do evento (DD/MM/AAAA) — deixe igual à data de início se for um único dia:',
-  dataFimDefault || dataInicio
-);
-if(dataFim===undefined) return;
-
-const horaFimDefault = existing ? existing.horaFim : horaInicio;
-const horaFimRaw = prompt('Horário de término do evento (HH:MM):', horaFimDefault);
-if(horaFimRaw===null) return;
-const horaFim = normalizarHora(horaFimRaw);
-
-if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim.trim())){
-  showToast('Horário de término inválido. Use HH:MM.');
-  return;
-}
-
-/* Validação de data/hora completas (não só o horário isolado).
-   Monta os dois instantes locais (sem toISOString, para não sofrer
-   deslocamento de fuso) e compara a data+hora inteira: um evento que
-   termina de madrugada no dia seguinte (ex: 20:00 → 04:00 do dia
-   seguinte) é válido; só é inválido quando o fim cai igual ou antes
-   do início na linha do tempo real, dias e horas juntos. */
-const inicioCompleto = new Date(`${dataInicio}T${horaInicio.trim()}:00`);
-const fimCompleto = new Date(`${dataFim}T${horaFim.trim()}:00`);
-if(fimCompleto <= inicioCompleto){
-  showToast(`A data/hora de término deve ser depois da data/hora de início. (Início: ${isoToBr(dataInicio)} ${horaInicio.trim()} · Término: ${isoToBr(dataFim)} ${horaFim.trim()})`);
-  return;
-}
-
-/* "Válido até" é um campo separado da data do evento (linkValidoAte),
-   guardado à parte de data/dataFim — de propósito, para permitir um
-   prazo de inscrição diferente da data do evento. Mas se antes ele
-   estava simplesmente acompanhando a data de término (não foi
-   customizado à parte), ao editar o evento ele deve continuar
-   acompanhando a NOVA data de término automaticamente — senão o link
-   fica "preso" numa data antiga já vencida mesmo com o evento
-   atualizado, que foi exatamente o problema relatado. */
-const linkEstavaAutomatico = existing ? (existing.linkValidoAte === existing.dataFim) : true;
-const linkDefault = existing
-  ? (linkEstavaAutomatico ? dataFim : existing.linkValidoAte)
-  : dataFim;
-const linkValidoAte = askDate(
-  (existing
-    ? `Este é um campo SEPARADO da data do evento. Hoje ele estava ${linkEstavaAutomatico ? 'acompanhando automaticamente a data de término' : 'definido manualmente para ' + formatDate(existing.linkValidoAte)}.\n`
-    : ''
-  ) + 'Link de convocação (interesse) válido até (DD/MM/AAAA) — após essa data, ninguém mais consegue registrar interesse:',
-  linkDefault || dataFim
-);
-if(linkValidoAte===undefined) return;
-
-(async ()=>{
-  if(existing){
-    existing.cliente=clienteNome;
-    existing.evento=evento.trim();
-    existing.data=dataInicio;
-    existing.horaInicio=horaInicio.trim();
-    existing.dataFim=dataFim;
-    existing.horaFim=horaFim.trim();
-    existing.linkValidoAte=linkValidoAte;
-  } else {
-    events.push({
-      id:uid(),
-      cliente:clienteNome,
-      evento:evento.trim(),
-      data:dataInicio,
-      horaInicio:horaInicio.trim(),
-      dataFim:dataFim,
-      horaFim:horaFim.trim(),
-      linkValidoAte:linkValidoAte,
-      status:'aberto',
-      valoresFuncao: FUNCOES_PADRAO_NOVO_EVENTO.map(f=>({funcao:f, valorDia:null}))
-    });
+  function camposFaltantes(){
+    const faltando=[];
+    if(!campoNome.value.trim()) faltando.push('Nome do Evento');
+    if(!obterNomeCliente()) faltando.push('Cliente');
+    if(!campoTipo.value.trim()) faltando.push('Tipo do Evento');
+    if(!campoDataInicio.value) faltando.push('Data de Início do Evento');
+    if(!campoDataFim.value) faltando.push('Data Final do Evento');
+    if(!campoHoraInicio.value) faltando.push('Horário de Início do Evento');
+    if(!campoHoraFim.value) faltando.push('Horário de Término do Evento');
+    if(!campoCidade.value.trim()) faltando.push('Cidade do Evento');
+    if(!campoCep.value.trim()) faltando.push('CEP do Evento');
+    if(!campoLocal.value.trim()) faltando.push('Local do Evento');
+    if(!campoEndereco.value.trim()) faltando.push('Endereço do Evento');
+    return faltando;
   }
-
-  const resultado = await saveEvents();
-  if(resultado && resultado.ok){
-    renderMain();
-    showToast('Evento atualizado com sucesso.');
-  } else {
-    /* Não persistiu: recarrega os eventos direto do Supabase para a
-       tela não continuar mostrando uma data que na verdade não foi
-       salva (o array local já tinha sido alterado antes da tentativa
-       de salvar). Mostra o erro real, sem escondê-lo. */
-    events = (await sGet('events')) || events;
-    renderMain();
-    const msg = (resultado && resultado.error && resultado.error.message) ? resultado.error.message : 'não foi possível salvar. Tente novamente.';
-    showToast('Erro ao salvar evento: '+msg);
+  function atualizarEstadoBotao(){
+    btnSalvar.disabled = camposFaltantes().length>0;
   }
-})();
+  [campoNome,campoClienteTexto,campoTipo,campoDataInicio,campoDataFim,campoHoraInicio,campoHoraFim,campoCidade,campoCep,campoLocal,campoEndereco].forEach(el=>{
+    el.addEventListener('input', atualizarEstadoBotao);
+    el.addEventListener('change', atualizarEstadoBotao);
+  });
+  atualizarEstadoBotao(); // estado inicial correto (ex.: ao editar um evento já completo)
+
+  document.getElementById('evFormCancelar').onclick=()=>overlay.remove();
+
+  btnSalvar.onclick=async ()=>{
+    erroBox.textContent='';
+    /* Nunca confia só no botão desabilitado — revalida tudo aqui,
+       mesmo que alguém dispare o clique por fora do fluxo normal. */
+    const faltando=camposFaltantes();
+    if(faltando.length){
+      erroBox.textContent='Preencha os campos obrigatórios do evento:\n'+faltando.map(f=>'- '+f).join('\n');
+      return;
     }
-   
+
+    const clienteNome=obterNomeCliente();
+    const evento=campoNome.value.trim();
+    const dataInicio=campoDataInicio.value;
+    const dataFim=campoDataFim.value;
+    const horaInicio=normalizarHora(campoHoraInicio.value).trim();
+    const horaFim=normalizarHora(campoHoraFim.value).trim();
+
+    if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaInicio)){ erroBox.textContent='Horário de início inválido. Use HH:MM.'; return; }
+    if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim)){ erroBox.textContent='Horário de término inválido. Use HH:MM.'; return; }
+
+    /* Validação de data/hora completas (não só o horário isolado) —
+       MESMA lógica de sempre, preservada sem alteração: monta os dois
+       instantes locais e compara data+hora inteira; um evento que
+       termina de madrugada do dia seguinte continua válido. */
+    const inicioCompleto = new Date(`${dataInicio}T${horaInicio}:00`);
+    const fimCompleto = new Date(`${dataFim}T${horaFim}:00`);
+    if(fimCompleto <= inicioCompleto){
+      erroBox.textContent=`A data/hora de término deve ser depois da data/hora de início. (Início: ${isoToBr(dataInicio)} ${horaInicio} · Término: ${isoToBr(dataFim)} ${horaFim})`;
+      return;
+    }
+
+    /* "Válido até" continua campo separado (linkValidoAte). Mesma
+       regra de sempre: se deixado em branco, acompanha a data de
+       término — preservando o comportamento já existente para quem
+       nunca customizou esse campo à parte. */
+    const linkEstavaAutomatico = existing ? (existing.linkValidoAte === existing.dataFim) : true;
+    const linkValidoAteInput=document.getElementById('evLinkValidoAte').value;
+    const linkValidoAte = linkValidoAteInput || (existing && !linkEstavaAutomatico ? existing.linkValidoAte : dataFim) || dataFim;
+
+    const tipoEvento=campoTipo.value.trim();
+    const cidadeEvento=campoCidade.value.trim();
+    const cepEvento=campoCep.value.trim();
+    const localEvento=campoLocal.value.trim();
+    const enderecoEvento=campoEndereco.value.trim();
+
+    btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
+
+    if(existing){
+      existing.cliente=clienteNome;
+      existing.evento=evento;
+      existing.data=dataInicio;
+      existing.horaInicio=horaInicio;
+      existing.dataFim=dataFim;
+      existing.horaFim=horaFim;
+      existing.linkValidoAte=linkValidoAte;
+      existing.tipoEvento=tipoEvento;
+      existing.cidadeEvento=cidadeEvento;
+      existing.cepEvento=cepEvento;
+      existing.localEvento=localEvento;
+      existing.enderecoEvento=enderecoEvento;
+    } else {
+      events.push({
+        id:uid(),
+        cliente:clienteNome,
+        evento:evento,
+        data:dataInicio,
+        horaInicio:horaInicio,
+        dataFim:dataFim,
+        horaFim:horaFim,
+        linkValidoAte:linkValidoAte,
+        tipoEvento:tipoEvento,
+        cidadeEvento:cidadeEvento,
+        cepEvento:cepEvento,
+        localEvento:localEvento,
+        enderecoEvento:enderecoEvento,
+        status:'aberto',
+        valoresFuncao: FUNCOES_PADRAO_NOVO_EVENTO.map(f=>({funcao:f, valorDia:null}))
+      });
+    }
+
+    const resultado = await saveEvents();
+    if(resultado && resultado.ok){
+      overlay.remove();
+      renderMain();
+      showToast(existing ? 'Evento atualizado com sucesso.' : 'Evento criado com sucesso.');
+    } else {
+      /* Não persistiu: recarrega os eventos direto do Supabase para a
+         tela não continuar mostrando uma data que na verdade não foi
+         salva (o array local já tinha sido alterado antes da tentativa
+         de salvar). Mostra o erro real, sem escondê-lo. */
+      events = (await sGet('events')) || events;
+      const msg = (resultado && resultado.error && resultado.error.message) ? resultado.error.message : 'não foi possível salvar. Tente novamente.';
+      erroBox.textContent='Erro ao salvar evento: '+msg;
+      btnSalvar.disabled=false; btnSalvar.textContent='Salvar Evento';
+    }
+  };
+}
+
 async function deleteCurrentEvent(){
   const ev=currentEvent(); if(!ev) return;
   if(!confirm(`Excluir o evento "${ev.evento}" (${ev.cliente})? Isso também apaga a escala e presença registradas.`)) return;
