@@ -65,7 +65,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
-          const respostaRede = await fetch(requisicao);
+          const respostaRede = await fetch(requisicao, { cache: 'no-store' });
           const cache = await caches.open(CACHE_VERSION);
           cache.put(requisicao, respostaRede.clone());
           return respostaRede;
