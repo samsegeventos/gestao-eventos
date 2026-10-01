@@ -261,25 +261,60 @@
     font-family:'JetBrains Mono',monospace;
     font-size:12px;
   }
+  /* CORREÇÃO DEFINITIVA — classes de UTILIDADE mobile (abrir/fechar
+     formulário, esconder bloco "só desktop") levam !important dentro
+     da media query. Motivo: o arquivo tem dezenas de regras .field/
+     .add-row/.link-box/etc. espalhadas em pontos variados do CSS, e
+     quando uma delas aparece DEPOIS dessas classes de utilidade no
+     arquivo, ela vencia na cascata (mesma especificidade = quem vem
+     depois ganha), sobrescrevendo o display:none/flex desejado mesmo
+     dentro do breakpoint mobile — por isso os campos do formulário
+     "+ Autorizar CPF"/"+ Adicionar Manualmente" e blocos marcados
+     .mob-desktop-only continuavam aparecendo sempre no celular. Com
+     !important aqui, essas classes SEMPRE vencem dentro do mobile,
+     não importa onde outras regras do arquivo estejam declaradas —
+     elimina esse tipo de bug de uma vez, sem depender de reordenar
+     manualmente cada regra. Nenhum VALOR foi alterado, só adicionado
+     !important nas regras já existentes deste bloco. */
+  .mob-form-fields{display:contents;}
+  .mob-btn-abrir-form{display:none;}
+  .mob-only-block{display:none;}
   @media(max-width:860px){
     .desktop-table{display:none !important;}
     .mobile-card-list{display:block;}
     /* FASE B — toggle do formulário "+ Autorizar CPF" (só mobile).
-       .mob-form-fields usa display:contents no desktop (fora desta
-       media query) para não alterar em nada o layout atual do
-       .add-row — aqui, dentro do mobile, vira um bloco que só aparece
-       quando o wrapper tem a classe .mob-form-open. */
-    .mob-form-fields{display:none; width:100%; flex-direction:column; gap:10px;}
-    .mob-form-toggle-wrap.mob-form-open .mob-form-fields{display:flex;}
-    .mob-btn-abrir-form{display:inline-flex; width:100%;}
-    .mob-form-toggle-wrap.mob-form-open .mob-btn-abrir-form{display:none;}
-    .mob-desktop-only{display:none;}
-    .mob-only-block{display:block;}
-    .mob-only-block.mob-flex-wrap{display:flex; flex-wrap:wrap;}
+       .mob-form-fields usa display:contents no desktop (regra base
+       acima, fora desta media query) para não alterar em nada o
+       layout atual do .add-row — aqui, dentro do mobile, vira um
+       bloco que só aparece quando o wrapper tem a classe
+       .mob-form-open. */
+    .mob-form-fields{display:none !important; width:100%; flex-direction:column; gap:10px;}
+    .mob-form-toggle-wrap.mob-form-open .mob-form-fields{display:flex !important;}
+    .mob-btn-abrir-form{display:inline-flex !important; width:100%;}
+    .mob-form-toggle-wrap.mob-form-open .mob-btn-abrir-form{display:none !important;}
+    .mob-desktop-only{display:none !important;}
+    .mob-only-block{display:block !important;}
+    .mob-only-block.mob-flex-wrap{display:flex !important; flex-wrap:wrap;}
+
+    /* CORREÇÃO — textos legíveis no mobile. O tema geral do sistema é
+       escuro (body usa var(--text), uma cor clara, pensada pra fundo
+       escuro); vários elementos reaproveitados aqui (.card-title,
+       .card-sub, .field label, inputs/selects) nunca tiveram uma cor
+       própria para o mobile, então herdavam essa cor clara — quase
+       invisível sobre os fundos brancos dos componentes .mob-*.
+       Usa as mesmas variáveis --mob-text/--mob-muted já definidas na
+       Fase A. Não toca em .mob-badge-* (cores de status), no cabeçalho
+       escuro (.mob-header/.mobile-topbar) nem nos botões laranja
+       (.mob-btn-primary/.btn-amber) — nenhum deles é afetado por
+       estas regras. */
+    .mob-shell,.card-title,.field,.field label,
+    .mob-card-nome,.mob-card-linha,.mob-card-linha .v,
+    .mob-form-fields,.mob-form-fields label,.mobile-card-group-title{color:var(--mob-text);}
+    .card-sub,.mob-card-sub,.mob-card-linha .l{color:var(--mob-muted);}
+    .field input,.field select,.field textarea,
+    .mob-form-fields input,.mob-form-fields select,.mob-form-fields textarea{color:var(--mob-text) !important; background:#fff !important;}
+    .field input::placeholder,.mob-form-fields input::placeholder{color:#767676;}
   }
-  .mob-form-fields{display:contents;}
-  .mob-btn-abrir-form{display:none;}
-  .mob-only-block{display:none;}
 
   .desktop-values-toolbar{display:flex;}
   /* ================= EVENTO MOBILE — NAVEGAÇÃO POR ETAPAS =================
@@ -703,7 +738,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 19:00';
+const APP_VERSION = '19/09/2026 19:15';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2901,12 +2936,12 @@ function renderPreEscala(){
     <div class="card-title">Convocação — quem tem interesse</div>
     <div class="card-sub">Compartilhe o link abaixo com a equipe. Quem preencher o formulário (nome, CPF e função) registra o interesse; a confirmação final é feita na Escala Oficial.</div>
     ${avisoArquivoLocal}
-    <div class="link-box">
+    <div class="link-box mob-desktop-only">
       <div class="field" style="flex:1;"><label>Link de interesse deste evento — válido até ${formatDate(ev.linkValidoAte)}${expirado?' (expirado)':''}</label><input type="text" readonly value="${link}" id="linkField"></div>
       <button class="btn btn-amber btn-sm" id="btnCopyLink" style="align-self:flex-end;">Copiar link</button>
       <a class="btn btn-teal btn-sm" style="align-self:flex-end; text-decoration:none;" target="_blank" rel="noopener" href="https://wa.me/?text=${encodeURIComponent('Você foi convidado para o evento "'+ev.evento+'". Preencha o formulário para registrar interesse: '+link)}">Enviar no WhatsApp</a>
     </div>
-    <div class="link-box">
+    <div class="link-box mob-desktop-only">
       <div class="field" style="flex:1;"><label>Link para o candidato consultar o status da candidatura</label><input type="text" readonly value="${statusLink}" id="linkFieldStatus"></div>
       <button class="btn btn-ghost btn-sm" id="btnCopyLinkStatus" style="align-self:flex-end;">Copiar link</button>
     </div>
