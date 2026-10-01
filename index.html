@@ -2690,6 +2690,23 @@ async function openEvent(id){
    objeto já salvo em eventos.dados — nenhuma tabela/estrutura nova no
    Supabase. Eventos antigos sem esses campos: aparecem vazios ao
    editar, nunca inventados. */
+function formatarTextoEvento(valor){
+  return String(valor||'').trim().toLocaleLowerCase('pt-BR').replace(/\b([a-záàâãéêíóôõúç])/gi,(m)=>m.toLocaleUpperCase('pt-BR'));
+}
+function formatarNomeEvento(valor){
+  return String(valor||'').trim().toLocaleUpperCase('pt-BR');
+}
+function aplicarMascaraCep(valor){
+  const d=String(valor||'').replace(/\D/g,'').slice(0,8);
+  if(d.length<=5) return d;
+  return d.slice(0,5)+'-'+d.slice(5);
+}
+function aplicarMascaraHora(valor){
+  const d=String(valor||'').replace(/\D/g,'').slice(0,4);
+  if(d.length<=2) return d;
+  return d.slice(0,2)+':'+d.slice(2);
+}
+
 function openEventForm(existing){
   const modalId='modalEvento';
   const modalJaAberto=document.getElementById(modalId);
@@ -2729,6 +2746,7 @@ function openEventForm(existing){
       <div class="field"><label>CEP do Evento *</label><input type="text" id="evCep" placeholder="00.000-000" value="${existing?escapeHtml(existing.cepEvento||''):''}"></div>
       <div class="field"><label>Local do Evento *</label><input type="text" id="evLocal" placeholder="Ex: SESI" value="${existing?escapeHtml(existing.localEvento||''):''}"></div>
       <div class="field"><label>Endereço do Evento *</label><textarea id="evEndereco" rows="2">${existing?escapeHtml(existing.enderecoEvento||''):''}</textarea></div>
+      <div class="field"><label>Número do Endereço do Evento *</label><input type="text" id="evNumero" inputmode="numeric" placeholder="Ex: 56" value="${existing?escapeHtml(existing.numeroEvento||''):''}"></div>
 
       <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Link de Convocação</div>
       <div class="field"><label>Validade do Link do Evento (opcional — prazo para registrar interesse; acompanha a data final se deixado em branco)</label><input type="date" id="evLinkValidoAte" value="${existing?(existing.linkValidoAte||''):''}"></div>
@@ -2754,6 +2772,7 @@ function openEventForm(existing){
   const campoCep=document.getElementById('evCep');
   const campoLocal=document.getElementById('evLocal');
   const campoEndereco=document.getElementById('evEndereco');
+  const campoNumero=document.getElementById('evNumero');
   const btnSalvar=document.getElementById('evFormSalvar');
   const erroBox=document.getElementById('evFormErro');
 
@@ -2779,14 +2798,21 @@ function openEventForm(existing){
     if(!campoCep.value.trim()) faltando.push('CEP do Evento');
     if(!campoLocal.value.trim()) faltando.push('Local do Evento');
     if(!campoEndereco.value.trim()) faltando.push('Endereço do Evento');
+    if(!campoNumero.value.trim()) faltando.push('Número do Endereço do Evento');
     return faltando;
   }
   function atualizarEstadoBotao(){
     btnSalvar.disabled = camposFaltantes().length>0;
   }
-  [campoNome,campoClienteTexto,campoTipo,campoDataInicio,campoDataFim,campoHoraInicio,campoHoraFim,campoCidade,campoCep,campoLocal,campoEndereco].forEach(el=>{
+  [campoNome,campoClienteTexto,campoTipo,campoDataInicio,campoDataFim,campoHoraInicio,campoHoraFim,campoCidade,campoCep,campoLocal,campoEndereco,campoNumero].forEach(el=>{
     el.addEventListener('input', atualizarEstadoBotao);
     el.addEventListener('change', atualizarEstadoBotao);
+  });
+  campoNome.addEventListener('input',()=>{ campoNome.value=formatarNomeEvento(campoNome.value); });
+  campoCep.addEventListener('input',()=>{ campoCep.value=aplicarMascaraCep(campoCep.value); });
+  campoNumero.addEventListener('input',()=>{ campoNumero.value=campoNumero.value.replace(/\D/g,'').slice(0,10); });
+  [campoClienteTexto,campoTipo,campoCidade,campoLocal,campoEndereco].forEach(el=>{
+    el.addEventListener('blur',()=>{ el.value=formatarTextoEvento(el.value); atualizarEstadoBotao(); });
   });
   atualizarEstadoBotao(); // estado inicial correto (ex.: ao editar um evento já completo)
 
@@ -2802,8 +2828,8 @@ function openEventForm(existing){
       return;
     }
 
-    const clienteNome=obterNomeCliente();
-    const evento=campoNome.value.trim();
+    const clienteNome=formatarTextoEvento(obterNomeCliente());
+    const evento=formatarNomeEvento(campoNome.value);
     const dataInicio=campoDataInicio.value;
     const dataFim=campoDataFim.value;
     const horaInicio=normalizarHora(campoHoraInicio.value).trim();
@@ -2811,6 +2837,7 @@ function openEventForm(existing){
 
     if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaInicio)){ erroBox.textContent='Horário de início inválido. Use HH:MM.'; return; }
     if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim)){ erroBox.textContent='Horário de término inválido. Use HH:MM.'; return; }
+    if(!/^\d{5}-\d{3}$/.test(aplicarMascaraCep(campoCep.value))){ erroBox.textContent='CEP inválido. Use 00.000-000.'; return; }
 
     /* Validação de data/hora completas (não só o horário isolado) —
        MESMA lógica de sempre, preservada sem alteração: monta os dois
@@ -2831,11 +2858,12 @@ function openEventForm(existing){
     const linkValidoAteInput=document.getElementById('evLinkValidoAte').value;
     const linkValidoAte = linkValidoAteInput || (existing && !linkEstavaAutomatico ? existing.linkValidoAte : dataFim) || dataFim;
 
-    const tipoEvento=campoTipo.value.trim();
-    const cidadeEvento=campoCidade.value.trim();
-    const cepEvento=campoCep.value.trim();
-    const localEvento=campoLocal.value.trim();
-    const enderecoEvento=campoEndereco.value.trim();
+    const tipoEvento=formatarTextoEvento(campoTipo.value);
+    const cidadeEvento=formatarTextoEvento(campoCidade.value);
+    const cepEvento=aplicarMascaraCep(campoCep.value);
+    const localEvento=formatarTextoEvento(campoLocal.value);
+    const enderecoEvento=formatarTextoEvento(campoEndereco.value);
+    const numeroEvento=campoNumero.value.trim();
 
     btnSalvar.disabled=true; btnSalvar.textContent='Salvando...';
 
@@ -2852,6 +2880,7 @@ function openEventForm(existing){
       existing.cepEvento=cepEvento;
       existing.localEvento=localEvento;
       existing.enderecoEvento=enderecoEvento;
+      existing.numeroEvento=numeroEvento;
     } else {
       events.push({
         id:uid(),
@@ -2867,6 +2896,7 @@ function openEventForm(existing){
         cepEvento:cepEvento,
         localEvento:localEvento,
         enderecoEvento:enderecoEvento,
+        numeroEvento:numeroEvento,
         status:'aberto',
         valoresFuncao: FUNCOES_PADRAO_NOVO_EVENTO.map(f=>({funcao:f, valorDia:null}))
       });
