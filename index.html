@@ -734,11 +734,15 @@
 <div class="toast" id="toast"></div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<!-- Comunicação PF (gera .xlsx real) e Contrato Individual (gera .pdf real) —
+     nenhuma lib de geração de documento existia antes disso no projeto. -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '19/09/2026 19:30';
+const APP_VERSION = '02/10/2026 21:25';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -2124,10 +2128,12 @@ function navItems(){
         <div class="nav-item ${section==='evento'&&subTab==='cpfsAutorizados'?'active':''}" data-nav="evento" data-sub="cpfsAutorizados"><span class="ic">•</span> CPFs Autorizados</div>
         <div class="nav-item ${section==='evento'&&subTab==='preescala'?'active':''}" data-nav="evento" data-sub="preescala"><span class="ic">•</span> Pré-Escala</div>
         <div class="nav-item ${section==='evento'&&subTab==='escala'?'active':''}" data-nav="evento" data-sub="escala"><span class="ic">•</span> Escala Oficial</div>
+        <div class="nav-item ${section==='evento'&&subTab==='comunicacaoPF'?'active':''}" data-nav="evento" data-sub="comunicacaoPF"><span class="ic">•</span> Comunicação PF</div>
         <div class="nav-item ${section==='evento'&&subTab==='escalaDias'?'active':''}" data-nav="evento" data-sub="escalaDias"><span class="ic">•</span> Escala &amp; Horário por Dia</div>
         <div class="nav-item ${section==='evento'&&subTab==='checkoutDias'?'active':''}" data-nav="evento" data-sub="checkoutDias"><span class="ic">•</span> Checkout por Dia</div>
         <div class="nav-item ${section==='evento'&&subTab==='fechamentoNovo'?'active':''}" data-nav="evento" data-sub="fechamentoNovo"><span class="ic">•</span> Fechamento Financeiro</div>
         <div class="nav-item ${section==='evento'&&subTab==='aprovacao'?'active':''}" data-nav="evento" data-sub="aprovacao"><span class="ic">•</span> Aprovação do Gestor</div>
+        <div class="nav-item ${section==='evento'&&subTab==='contratos'?'active':''}" data-nav="evento" data-sub="contratos"><span class="ic">•</span> Contrato Individual</div>
         <div class="nav-item ${section==='evento'&&subTab==='cracha'?'active':''}" data-nav="evento" data-sub="cracha"><span class="ic">•</span> Impressão de Crachás</div>
       </div>` : ''}
       <div class="nav-item ${section==='pagamentos'?'active':''}" data-nav="pagamentos"><span class="ic">💰</span> Pagamentos</div>
@@ -2413,6 +2419,313 @@ function baseDaFuncaoDisplay(funcaoNorm){
    A função específica continua sendo preservada no cadastro/escala,
    mas ambos pertencem à categoria Vigilante para cadastro, validações,
    documentos, crachás, relatórios e demais fluxos que exigem vigilante. */
+/* ================= UTILITÁRIOS — Contrato Individual / Comunicação PF =================
+   Funções puras, sem dependência de nenhuma lógica de negócio existente. */
+const _EXTENSO_UNIDADE=['zero','um','dois','três','quatro','cinco','seis','sete','oito','nove','dez','onze','doze','treze','quatorze','quinze','dezesseis','dezessete','dezoito','dezenove'];
+const _EXTENSO_DEZENA=['','','vinte','trinta','quarenta','cinquenta','sessenta','setenta','oitenta','noventa'];
+const _EXTENSO_CENTENA=['','cento','duzentos','trezentos','quatrocentos','quinhentos','seiscentos','setecentos','oitocentos','novecentos'];
+function _extensoAteNoveNoveNove(n){
+  if(n===0) return '';
+  if(n===100) return 'cem';
+  if(n<20) return _EXTENSO_UNIDADE[n];
+  if(n<100){
+    const d=Math.floor(n/10), u=n%10;
+    return _EXTENSO_DEZENA[d] + (u? ' e '+_EXTENSO_UNIDADE[u] : '');
+  }
+  const c=Math.floor(n/100), resto=n%100;
+  return _EXTENSO_CENTENA[c] + (resto? ' e '+_extensoAteNoveNoveNove(resto) : '');
+}
+/* Número inteiro por extenso (suficiente para quantidade de horas de um
+   plantão — não precisa tratar milhões/bilhões aqui). */
+function numeroPorExtenso(n){
+  n=Math.round(Number(n)||0);
+  if(n===0) return 'zero';
+  if(n<1000) return _extensoAteNoveNoveNove(n);
+  const milhar=Math.floor(n/1000), resto=n%1000;
+  const txtMilhar = milhar===1 ? 'mil' : _extensoAteNoveNoveNove(milhar)+' mil';
+  return txtMilhar + (resto? ' e '+_extensoAteNoveNoveNove(resto) : '');
+}
+/* Valor em reais por extenso (ex.: 180 -> "cento e oitenta reais";
+   180.50 -> "cento e oitenta reais e cinquenta centavos"). */
+function valorPorExtenso(valor){
+  const n=Number(valor)||0;
+  const inteiro=Math.floor(n);
+  const centavos=Math.round((n-inteiro)*100);
+  let txt = inteiro===0 ? 'zero reais' : numeroPorExtenso(inteiro)+(inteiro===1?' real':' reais');
+  if(centavos>0) txt += ' e '+numeroPorExtenso(centavos)+(centavos===1?' centavo':' centavos');
+  return txt;
+}
+/* Remove acentos/espaços/caracteres especiais para nomes de arquivo,
+   preservando a regra "sem underscores internos no nome do evento/
+   colaborador" já definida. */
+function normalizarNomeArquivo(texto){
+  return String(texto||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // remove acentos
+    .replace(/[^a-zA-Z0-9]/g,'') // remove espaços e qualquer caractere especial
+    .toUpperCase();
+}
+function nomeMesExtensoMaiusculo(dataIso){
+  const meses=['JANEIRO','FEVEREIRO','MARÇO','ABRIL','MAIO','JUNHO','JULHO','AGOSTO','SETEMBRO','OUTUBRO','NOVEMBRO','DEZEMBRO'];
+  if(!dataIso) return '';
+  const [,m]=dataIso.split('-');
+  return meses[parseInt(m,10)-1] || '';
+}
+
+/* ================= COMUNICAÇÃO PF =================
+   Fonte EXCLUSIVA: Escala Oficial (staff, escalado=true), filtrando
+   somente vigilantes/supervisores/coordenadores via ehFuncaoVigilante
+   (já existente, não duplicada). Cruza com o Banco de Colaboradores
+   por CPF para IDENTIDADE/RECICLAGEM — não inventa dado nenhum. */
+function _vigilantesEscaladosParaPF(){
+  return staff.filter(s=>s.escalado && ehFuncaoVigilante(s.funcao));
+}
+function renderComunicacaoPF(){
+  if(!gestorUnlocked) return lockScreenHtml('A Comunicação PF só fica visível para o gestor.');
+  const ev=currentEvent();
+  const vigilantes=_vigilantesEscaladosParaPF();
+  const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
+  let status, statusTexto;
+  if(!vigilantes.length){ status='nao-iniciada'; statusTexto='⚪ Não iniciada — nenhum vigilante escalado ainda'; }
+  else if(faltamDadosEvento.length){ status='pendente'; statusTexto='🟡 Pendente — faltam dados do evento'; }
+  else { status='pronta'; statusTexto='🟢 Pronta para gerar'; }
+
+  return `
+    <div class="card-title">Comunicação PF</div>
+    <div class="card-sub">Lista de vigilantes escalados para comunicação à Polícia Federal. Gerada a partir da Escala Oficial — nunca inclui pessoas manualmente.</div>
+    <div style="margin-bottom:14px;"><span class="badge ${status==='pronta'?'pago':'pendente'}">${statusTexto}</span></div>
+    ${!vigilantes.length ? `<div class="empty"><b>Nenhum vigilante escalado</b>Escale ao menos um Vigilante/Supervisor/Coordenador na Escala Oficial.</div>` : `
+      <table>
+        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Função</th><th>Identidade</th><th>Reciclagem</th></tr></thead>
+        <tbody>
+          ${vigilantes.map((s,i)=>{
+            const colab=buscarColaboradorPorCpf(s.cpf);
+            return `<tr>
+              <td class="mono">${i+1}</td>
+              <td>${escapeHtml(nomeExibicao(s.nome))}</td>
+              <td class="mono">${escapeHtml(s.cpf?formatCpf(s.cpf):'—')}</td>
+              <td>${escapeHtml(s.funcao||'—')}</td>
+              <td>${colab&&colab.identidade?escapeHtml(colab.identidade):'<span style="color:var(--red);">faltando</span>'}</td>
+              <td>${colab&&colab.reciclagem?formatDate(colab.reciclagem):'<span style="color:var(--red);">faltando</span>'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    `}
+    ${faltamDadosEvento.length ? `<div class="empty" style="margin-top:16px;"><b>⚠️ Não é possível gerar a Comunicação PF</b>Dados do evento pendentes:<ul style="margin:6px 0 0 18px;padding:0;">${faltamDadosEvento.map(f=>`<li>${escapeHtml(f)}</li>`).join('')}</ul>Atualize os dados do evento (botão "Editar", no topo) e tente novamente.</div>` : ''}
+    <button class="btn btn-amber" id="btnGerarPF" style="margin-top:16px;" ${status!=='pronta'?'disabled':''}>Gerar Lista PF (.xlsx)</button>
+  `;
+}
+function attachComunicacaoPFHandlers(){
+  const btn=document.getElementById('btnGerarPF');
+  if(!btn) return;
+  btn.onclick=()=>{
+    const ev=currentEvent();
+    const vigilantes=_vigilantesEscaladosParaPF();
+    const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
+    if(!vigilantes.length || faltamDadosEvento.length){ showToast('Não é possível gerar: dados pendentes.'); return; }
+    if(typeof XLSX==='undefined'){ showToast('Biblioteca de geração de planilha não carregou. Verifique sua conexão e tente novamente.'); return; }
+
+    /* Monta a planilha reproduzindo a estrutura do modelo oficial
+       (SESI SETE LAGOAS ...xlsx): cabeçalho EMPRESA, LOCAL+DATA,
+       categoria+VENCIMENTO, colunas Nº/NOME/CPF/IDENTIDADE/VENCIMENTO,
+       linhas de dados, rodapé com os dados do evento. A 2ª aba do
+       modelo original (lista auxiliar "LISTA SAMSEG (2)") NÃO faz
+       parte do arquivo gerado, como já definido. */
+    const linhas=[];
+    linhas.push(['EMPRESA: SAMSEG SEGURANÇA LTDA.']);
+    linhas.push(['LOCAL:', ev.localEvento||'', '', '', isoToBr(ev.data)]);
+    linhas.push(['VIGILANTES','','','','VENCIMENTO']);
+    linhas.push(['Nº','NOME','CPF','IDENTIDADE','']);
+    vigilantes.forEach((s,i)=>{
+      const colab=buscarColaboradorPorCpf(s.cpf);
+      linhas.push([i+1, nomeExibicao(s.nome), formatCpf(s.cpf||''), (colab&&colab.identidade)||'', (colab&&colab.reciclagem)?formatDate(colab.reciclagem):'']);
+    });
+    linhas.push([]);
+    linhas.push(['', `CIDADE DO EVENTO - ${ev.cidadeEvento||''}`]);
+    linhas.push(['', `TIPO DE EVENTO - ${ev.tipoEvento||''}`]);
+    linhas.push(['', `HORARIO DO EVENTO - ${(ev.horaInicio||'')} AS ${(ev.horaFim||'')} HRS`]);
+    linhas.push(['', `CEP - ${ev.cepEvento||''}`]);
+    linhas.push(['', `ENDEREÇO - ${(ev.enderecoEvento||'')}${ev.numeroEvento?', Nº '+ev.numeroEvento:''}`]);
+    linhas.push(['', `DATA DO EVENTO - ${isoToBr(ev.data)}${ev.dataFim && ev.dataFim!==ev.data ? ' a '+isoToBr(ev.dataFim) : ''}`]);
+    linhas.push(['', `LOCAL DO EVENTO - ${ev.localEvento||''}`]);
+    linhas.push(['', `NOME DO EVENTO - ${ev.evento||''}`]);
+
+    const ws=XLSX.utils.aoa_to_sheet(linhas);
+    ws['!merges']=[
+      {s:{r:0,c:0},e:{r:0,c:3}}, // EMPRESA (A1:D1)
+      {s:{r:1,c:2},e:{r:1,c:4}}, // DATA (C2:E2) — corrigido: antes não existia
+      {s:{r:2,c:4},e:{r:3,c:4}}, // VENCIMENTO (E3:E4) — corrigido: mesclagem antiga estava na linha/célula errada (1x1 sem efeito)
+    ];
+    ws['!cols']=[{wch:5},{wch:35},{wch:18},{wch:16},{wch:16}];
+    /* Configuração de impressão (valores lidos diretamente do arquivo
+       .xlsx fornecido): retrato, papel A4 (código OOXML 9), escala
+       85%, margens em polegadas 0,51/0,51/0,79/0,79/0,31/0,31. O
+       modelo original não define área de impressão explícita
+       (print_area vazio), então não há nada a reproduzir nesse ponto.
+       CONFIRMADO POR TESTE REAL (gerando o arquivo e inspecionando o
+       XML interno): a SheetJS Community 0.18.5 GRAVA corretamente
+       "!margins", mas NÃO grava "!pageSetup" (orientação/papel/escala)
+       — a propriedade é aceita sem erro, mas fica sem efeito no
+       arquivo final. Mantida mesmo assim (não tem custo, é inofensiva,
+       e pode ganhar efeito em versões futuras da biblioteca), mas a
+       limitação é real e confirmada, não presumida. */
+    ws['!pageSetup']={orientation:'portrait', paperSize:9, scale:85};
+    ws['!margins']={left:0.51, right:0.51, top:0.79, bottom:0.79, header:0.31, footer:0.31};
+
+    const wb=XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (ev.localEvento||'EVENTO').slice(0,28) || 'Evento');
+
+    const nomeArquivo=`${(ev.data||'').split('-')[2]||'00'}_${nomeMesExtensoMaiusculo(ev.data)}_${normalizarNomeArquivo(ev.evento)}_${(ev.data||'').split('-')[0]||'0000'}.xlsx`;
+    XLSX.writeFile(wb, nomeArquivo);
+    showToast('Lista PF gerada: '+nomeArquivo);
+  };
+}
+
+/* ================= CONTRATO INDIVIDUAL =================
+   Modelo oficial: CONTRATO_EVENTUAL_SAMSEG_MODELO_SEGURANÇA.docx
+   (texto extraído e reproduzido abaixo — nenhuma cláusula foi criada,
+   alterada ou removida; só os campos variáveis são substituídos). */
+function _montarTextoContrato(colab, lote, ev){
+  const nome=nomeExibicao(colab.nome);
+  const cpfFmt=formatCpf(colab.cpf||'');
+  const funcao=colab.funcao||'';
+  const cidade=ev.cidadeEvento||'';
+  const local=ev.localEvento||'';
+  const evento=ev.evento||'';
+  const partesIni=(lote.dataInicio||'').split('-');
+  const [diaIni,mesIniNum,anoIni] = partesIni.length===3 ? [partesIni[2],partesIni[1],partesIni[0]] : ['','',''];
+  const partesFim=(lote.dataFim||'').split('-');
+  const [diaFim,mesFimNum,anoFim] = partesFim.length===3 ? [partesFim[2],partesFim[1],partesFim[0]] : ['','',''];
+  const mesIniExt=nomeMesExtensoMaiusculo(lote.dataInicio).toLowerCase();
+  const mesFimExt=nomeMesExtensoMaiusculo(lote.dataFim).toLowerCase();
+  const diasTexto = (lote.dataInicio===lote.dataFim) ? diaIni : `${diaIni} a ${diaFim}`;
+  const valorFuncao=getFuncaoRateForEvent(ev, funcao)||0;
+  const hoje=new Date();
+  const hojeIso=hoje.toISOString().slice(0,10);
+
+  return [
+    'CONTRATO INDIVIDUAL DE TRABALHO EVENTUAL',
+    '',
+    `Por este instrumento particular, que entre si fazem a empresa SAMSEG SEGURANÇA LTDA, com sede em Sete Lagoas, MG, na Rua Ouro Preto, nº 81, Bairro Jardim Cambuí, inscrita no CNPJ sob nº 06.335.565/0001-06, e, de outro lado, o(a) Sr.(a.) ${nome}, profissão ${funcao}, portador(a) do CPF nº ${cpfFmt}, doravante denominado(a) "CONTRATADO(A)", firmam o presente Contrato Individual de Trabalho Eventual.`,
+    '',
+    'O presente contrato é celebrado na forma da legislação aplicável, especialmente nos termos da Lei nº 6.019/1974 e demais normas pertinentes, tendo as partes, por este instrumento, justo e contratado o constante das cláusulas e condições a seguir, que mutuamente aceitam e se comprometem a cumprir.',
+    '',
+    `O(A) CONTRATADO(A) exercerá a função de ${funcao}, no evento denominado ${evento}, a ser realizado na cidade de ${cidade}, MG, no horário das ${lote.horaInicio||''}h às ${lote.horaFim||''}h, no(s) dia(s) ${diasTexto} de ${mesIniExt} de 20${anoIni.slice(-2)}. O(A) CONTRATADO(A) será empregado(a) somente no(a) ${local}, no evento e horário para os quais foi escalado(a), ficando impossibilitado(a) de trabalhar simultaneamente em outro local.`,
+    '',
+    `1. Este contrato terá início em ${diaIni} de ${mesIniExt} de 20${anoIni.slice(-2)} e estender-se-á até ${diaFim} de ${mesFimExt} de 20${anoFim.slice(-2)}, para o trabalho no evento ${evento}, de acordo com os horários acima descritos.`,
+    '',
+    `2. O(A) CONTRATADO(A) receberá R$ ${valorFuncao.toFixed(2).replace('.',',')} (${valorPorExtenso(valorFuncao)}) por plantão de ${lote.horas||''} (${numeroPorExtenso(lote.horas||0)}) horas trabalhadas.`,
+    '',
+    '3. A duração do presente contrato encerrar-se-á após o término do evento e o cumprimento da jornada contratada.',
+    '',
+    '4. O(A) CONTRATADO(A) deverá cumprir os horários, normas e procedimentos fixados pela empresa e, quando aplicável, pela tomadora dos serviços.',
+    '',
+    '5. Ficam assegurados ao(à) CONTRATADO(A) os direitos previstos na legislação trabalhista aplicável, inclusive os decorrentes do artigo 11 da Lei nº 6.019/1974, quando cabíveis.',
+    '',
+    '6. A remuneração do(a) CONTRATADO(A) estará sujeita aos descontos tributários e demais descontos legalmente permitidos. Eventuais danos causados por dolo ou culpa serão apurados e poderão ensejar responsabilização e ressarcimento, observada a legislação vigente.',
+    '',
+    '7. O(A) CONTRATADO(A) obriga-se a executar seus serviços com dedicação, zelo e lealdade, cumprindo o regulamento interno da contratante, as instruções de sua administração e as ordens de seus superiores hierárquicos, desde que relacionadas às atividades contratadas e em conformidade com a legislação.',
+    '',
+    '8. O(A) CONTRATADO(A) deverá zelar pelo bom uso dos materiais fornecidos pela empresa, realizando a conferência ao assumir e ao entregar o posto de serviço. Em caso de dano, perda ou desaparecimento de material, deverá comunicar imediatamente à contratante, ficando eventual responsabilidade sujeita à apuração dos fatos e à legislação aplicável.',
+    '',
+    '9. É obrigatório o uso do uniforme e dos EPIs fornecidos pela empresa, quando aplicáveis, devendo o(a) CONTRATADO(A) manter boa apresentação pessoal, comparecendo ao posto de serviço com higiene adequada, cabelos e barba devidamente cuidados, calçados limpos e uniformes limpos e em boas condições de apresentação.',
+    '',
+    '10. É obrigatório o uso do crachá de identificação fornecido pela empresa, devendo o(a) CONTRATADO(A) mantê-lo em local visível no uniforme durante o serviço.',
+    '',
+    '11. O descumprimento das cláusulas deste contrato poderá sujeitar o(a) CONTRATADO(A) às medidas cabíveis, observadas a legislação vigente, o direito de defesa e a gravidade da conduta.',
+    '',
+    'E, por estarem de pleno acordo, as partes assinam o presente instrumento em duas vias de igual teor, na presença de duas testemunhas.',
+    '',
+    `Sete Lagoas, MG, ${hoje.getDate()} de ${nomeMesExtensoMaiusculo(hojeIso).toLowerCase()} de ${hoje.getFullYear()}.`,
+    /* A partir daqui a seção final (CONTRATANTE/CONTRATADO(A) lado a
+       lado + TESTEMUNHAS abaixo) NÃO é mais texto linear — precisa de
+       posicionamento em colunas, desenhado à parte por
+       _desenharAssinaturasContrato(). Nenhuma cláusula/dado mudou,
+       só a forma de desenhar essa parte específica no PDF. */
+  ];
+}
+/* Desenha a seção final do contrato em DUAS COLUNAS lado a lado
+   (CONTRATANTE à esquerda, CONTRATADO(A) à direita), com TESTEMUNHAS
+   abaixo — aproximando o layout do modelo oficial. Usa só recursos
+   nativos do jsPDF (linhas e posições de texto); não cria nem
+   substitui nenhuma imagem/selo que não exista no projeto — onde o
+   modelo tem uma imagem, aqui fica só o espaço reservado (uma linha
+   de assinatura em branco), sem inventar substituto. */
+function _desenharAssinaturasContrato(doc, y, margemEsq, larguraUtil, nome, cpfFmt){
+  const colEsq=margemEsq;
+  const colDir=margemEsq + larguraUtil/2 + 4;
+  const larguraColuna=larguraUtil/2 - 4;
+
+  if(y>250){ doc.addPage(); y=20; }
+  y+=6;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('CONTRATANTE', colEsq, y);
+  doc.text('CONTRATADO(A)', colDir, y);
+
+  // Espaço reservado para a assinatura (linha em branco) — nenhuma
+  // imagem/selo é desenhada aqui, só o espaço que ela ocuparia.
+  y+=18;
+  doc.setLineWidth(0.2);
+  doc.line(colEsq, y, colEsq+larguraColuna, y);
+  doc.line(colDir, y, colDir+larguraColuna, y);
+
+  y+=5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('SAMSEG SEGURANÇA LTDA', colEsq, y);
+  const nomeContratadoQuebrado=doc.splitTextToSize(nome, larguraColuna);
+  nomeContratadoQuebrado.forEach((l,i)=> doc.text(l, colDir, y+i*4.5));
+  y+= Math.max(0, (nomeContratadoQuebrado.length-1)*4.5);
+
+  y+=5;
+  doc.text(`CPF: ${cpfFmt}`, colDir, y);
+
+  y+=14;
+  doc.setFont('helvetica','bold'); doc.setFontSize(11);
+  doc.text('TESTEMUNHAS:', colEsq, y);
+
+  y+=12;
+  doc.setLineWidth(0.2);
+  doc.line(colEsq, y, colEsq+larguraColuna, y);
+  doc.line(colDir, y, colDir+larguraColuna, y);
+
+  y+=5;
+  doc.setFont('helvetica','normal'); doc.setFontSize(10);
+  doc.text('NOME: John Alexandre Silva', colEsq, y);
+  doc.text('NOME:', colDir, y);
+  y+=5;
+  doc.text('CPF: 070.520.136-81', colEsq, y);
+  doc.text('CPF:', colDir, y);
+
+  return y;
+}
+function _gerarPdfContrato(colab, lote, ev){
+  if(typeof window.jspdf==='undefined'){ showToast('Biblioteca de geração de PDF não carregou. Verifique sua conexão e tente novamente.'); return null; }
+  const { jsPDF }=window.jspdf;
+  const doc=new jsPDF({unit:'mm', format:'a4'});
+  const margemEsq=18, margemDir=18, larguraUtil=210-margemEsq-margemDir;
+  let y=20;
+  doc.setFont('helvetica','normal'); doc.setFontSize(11);
+  const linhas=_montarTextoContrato(colab, lote, ev);
+  linhas.forEach(paragrafo=>{
+    if(paragrafo===''){ y+=4; return; }
+    const negrito = /^CONTRATO INDIVIDUAL/.test(paragrafo);
+    doc.setFont('helvetica', negrito?'bold':'normal');
+    doc.setFontSize(11);
+    const quebradas=doc.splitTextToSize(paragrafo, larguraUtil);
+    quebradas.forEach(l=>{
+      if(y>277){ doc.addPage(); y=20; }
+      doc.text(l, margemEsq, y);
+      y+=5.6;
+    });
+  });
+  // Seção final em colunas (CONTRATANTE/CONTRATADO(A) lado a lado,
+  // TESTEMUNHAS abaixo) — mesmos dados de sempre, só o layout mudou.
+  const nome=nomeExibicao(colab.nome);
+  const cpfFmt=formatCpf(colab.cpf||'');
+  _desenharAssinaturasContrato(doc, y, margemEsq, larguraUtil, nome, cpfFmt);
+  return doc;
+}
+
 function ehFuncaoVigilante(funcao){
   const norm=normalizaFuncaoDisplay(funcao);
   return norm.startsWith('VIGILANTE') || norm==='SUPERVISOR' || norm==='COORDENADOR';
@@ -2697,14 +3010,36 @@ function formatarNomeEvento(valor){
   return String(valor||'').trim().toLocaleUpperCase('pt-BR');
 }
 function aplicarMascaraCep(valor){
+  /* CORREÇÃO — formato pedido é 00.000-000 (com ponto após os 2
+     primeiros dígitos); a versão anterior gerava 00000-000 (sem
+     ponto), inconsistente com a própria validação abaixo. */
   const d=String(valor||'').replace(/\D/g,'').slice(0,8);
-  if(d.length<=5) return d;
-  return d.slice(0,5)+'-'+d.slice(5);
+  if(d.length<=2) return d;
+  if(d.length<=5) return d.slice(0,2)+'.'+d.slice(2);
+  return d.slice(0,2)+'.'+d.slice(2,5)+'-'+d.slice(5);
 }
 function aplicarMascaraHora(valor){
   const d=String(valor||'').replace(/\D/g,'').slice(0,4);
   if(d.length<=2) return d;
   return d.slice(0,2)+':'+d.slice(2);
+}
+/* Validação reaproveitável para telas que dependem de dados completos
+   do evento para gerar documentos (Comunicação PF, Contratos — ainda
+   não implementadas nesta rodada, mas a função já fica pronta para
+   elas, como pedido). NÃO bloqueia o salvamento do evento — só informa
+   o que falta para quem for gerar um documento que precise desses
+   dados. Retorna um array com os nomes dos campos faltantes (vazio =
+   tudo completo). */
+function validarDadosEventoParaDocumentos(ev){
+  const faltando=[];
+  if(!ev) return ['Evento não encontrado'];
+  if(!ev.tipoEvento || !ev.tipoEvento.trim()) faltando.push('Tipo do Evento');
+  if(!ev.cidadeEvento || !ev.cidadeEvento.trim()) faltando.push('Cidade do Evento');
+  if(!ev.cepEvento || !ev.cepEvento.trim()) faltando.push('CEP do Evento');
+  if(!ev.localEvento || !ev.localEvento.trim()) faltando.push('Local do Evento');
+  if(!ev.enderecoEvento || !ev.enderecoEvento.trim()) faltando.push('Endereço do Evento');
+  if(!ev.numeroEvento || !String(ev.numeroEvento).trim()) faltando.push('Número do Evento');
+  return faltando;
 }
 
 function openEventForm(existing){
@@ -2731,7 +3066,7 @@ function openEventForm(existing){
         <input type="text" id="evClienteTexto" placeholder="Digite o nome do cliente" style="margin-top:6px; display:${clienteAtualNaoEstaNaLista?'block':'none'};" value="${clienteAtualNaoEstaNaLista?escapeHtml(existing.cliente):''}">
         ` : `<input type="text" id="evClienteTexto" placeholder="Nome do cliente" value="${existing?escapeHtml(existing.cliente||''):''}">`}
       </div>
-      <div class="field"><label>Tipo do Evento *</label><input type="text" id="evTipo" placeholder="Ex: Festa Junina" value="${existing?escapeHtml(existing.tipoEvento||''):''}"></div>
+      <div class="field"><label>Tipo do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><input type="text" id="evTipo" placeholder="Ex: Festa Junina" value="${existing?escapeHtml(existing.tipoEvento||''):''}"></div>
 
       <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Data do Evento</div>
       <div class="field"><label>Data de Início do Evento *</label><input type="date" id="evDataInicio" value="${existing?(existing.data||''):''}"></div>
@@ -2742,11 +3077,11 @@ function openEventForm(existing){
       <div class="field"><label>Horário de Término do Evento *</label><input type="time" id="evHoraFim" value="${existing?(existing.horaFim||''):''}"></div>
 
       <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Local do Evento</div>
-      <div class="field"><label>Cidade do Evento *</label><input type="text" id="evCidade" value="${existing?escapeHtml(existing.cidadeEvento||''):''}"></div>
-      <div class="field"><label>CEP do Evento *</label><input type="text" id="evCep" placeholder="00.000-000" value="${existing?escapeHtml(existing.cepEvento||''):''}"></div>
-      <div class="field"><label>Local do Evento *</label><input type="text" id="evLocal" placeholder="Ex: SESI" value="${existing?escapeHtml(existing.localEvento||''):''}"></div>
-      <div class="field"><label>Endereço do Evento *</label><textarea id="evEndereco" rows="2">${existing?escapeHtml(existing.enderecoEvento||''):''}</textarea></div>
-      <div class="field"><label>Número do Endereço do Evento *</label><input type="text" id="evNumero" inputmode="numeric" placeholder="Ex: 56" value="${existing?escapeHtml(existing.numeroEvento||''):''}"></div>
+      <div class="field"><label>Cidade do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><input type="text" id="evCidade" value="${existing?escapeHtml(existing.cidadeEvento||''):''}"></div>
+      <div class="field"><label>CEP do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><input type="text" id="evCep" placeholder="00.000-000" value="${existing?escapeHtml(existing.cepEvento||''):''}"></div>
+      <div class="field"><label>Local do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><input type="text" id="evLocal" placeholder="Ex: SESI" value="${existing?escapeHtml(existing.localEvento||''):''}"></div>
+      <div class="field"><label>Endereço do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><textarea id="evEndereco" rows="2">${existing?escapeHtml(existing.enderecoEvento||''):''}</textarea></div>
+      <div class="field"><label>Número do Endereço do Evento <span style="font-weight:400;color:var(--muted);">(opcional)</span></label><input type="text" id="evNumero" inputmode="numeric" placeholder="Ex: 56" value="${existing?escapeHtml(existing.numeroEvento||''):''}"></div>
 
       <div style="font-size:11px; font-weight:700; color:var(--muted); text-transform:uppercase; letter-spacing:0.4px; margin:18px 0 4px;">Link de Convocação</div>
       <div class="field"><label>Validade do Link do Evento (opcional — prazo para registrar interesse; acompanha a data final se deixado em branco)</label><input type="date" id="evLinkValidoAte" value="${existing?(existing.linkValidoAte||''):''}"></div>
@@ -2785,20 +3120,21 @@ function openEventForm(existing){
     if(selCliente) return selCliente.value==='__outro__' ? campoClienteTexto.value.trim() : selCliente.value;
     return campoClienteTexto.value.trim();
   }
+  /* AJUSTE — o evento não é mais bloqueado no SALVAMENTO por causa de
+     dados de endereço/documentação incompletos (Tipo, Cidade, CEP,
+     Local, Endereço, Número continuam existindo no formulário, mas
+     agora são opcionais aqui). Esses dados passam a ser exigidos
+     somente na hora de GERAR documentos que dependem deles (Comunicação
+     PF, Contratos) — ver validarDadosEventoParaDocumentos() mais abaixo,
+     fora desta função, reaproveitável por essas telas futuras. */
   function camposFaltantes(){
     const faltando=[];
     if(!campoNome.value.trim()) faltando.push('Nome do Evento');
     if(!obterNomeCliente()) faltando.push('Cliente');
-    if(!campoTipo.value.trim()) faltando.push('Tipo do Evento');
     if(!campoDataInicio.value) faltando.push('Data de Início do Evento');
     if(!campoDataFim.value) faltando.push('Data Final do Evento');
     if(!campoHoraInicio.value) faltando.push('Horário de Início do Evento');
     if(!campoHoraFim.value) faltando.push('Horário de Término do Evento');
-    if(!campoCidade.value.trim()) faltando.push('Cidade do Evento');
-    if(!campoCep.value.trim()) faltando.push('CEP do Evento');
-    if(!campoLocal.value.trim()) faltando.push('Local do Evento');
-    if(!campoEndereco.value.trim()) faltando.push('Endereço do Evento');
-    if(!campoNumero.value.trim()) faltando.push('Número do Endereço do Evento');
     return faltando;
   }
   function atualizarEstadoBotao(){
@@ -2837,7 +3173,11 @@ function openEventForm(existing){
 
     if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaInicio)){ erroBox.textContent='Horário de início inválido. Use HH:MM.'; return; }
     if(!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(horaFim)){ erroBox.textContent='Horário de término inválido. Use HH:MM.'; return; }
-    if(!/^\d{5}-\d{3}$/.test(aplicarMascaraCep(campoCep.value))){ erroBox.textContent='CEP inválido. Use 00.000-000.'; return; }
+    /* CEP agora é opcional no salvamento — só valida o FORMATO quando
+       o usuário realmente digitou algo (campo vazio não deve mais
+       bloquear, já que a obrigatoriedade virou "no momento de gerar
+       documentos", não "no momento de salvar o evento"). */
+    if(campoCep.value.trim() && !/^\d{2}\.\d{3}-\d{3}$/.test(aplicarMascaraCep(campoCep.value))){ erroBox.textContent='CEP inválido. Use 00.000-000.'; return; }
 
     /* Validação de data/hora completas (não só o horário isolado) —
        MESMA lógica de sempre, preservada sem alteração: monta os dois
@@ -2945,10 +3285,12 @@ function renderEventoMobileNav(){
     ['cpfsAutorizados','CPF','CPFs'],
     ['preescala','PRÉ','PRÉ-ESCALA'],
     ['escala','ESC','ESCALA'],
+    ['comunicacaoPF','PF','COM. PF'],
     ['escalaDias','DIA','ESCALA/DIA'],
     ['checkoutDias','✓','CHECKOUT'],
     ['fechamentoNovo','FIN','FECHAMENTO'],
     ['aprovacao','APR','APROVAÇÃO'],
+    ['contratos','CTR','CONTRATOS'],
     ['cracha','ID','CRACHÁS']
   ];
   return `<div class="event-mobile-nav" aria-label="Etapas do evento">
@@ -2967,10 +3309,12 @@ function tituloSubTabEvento(){
     cpfsAutorizados:'CPFs Autorizados',
     preescala:'Pré-Escala',
     escala:'Escala Oficial',
+    comunicacaoPF:'Comunicação PF',
     escalaDias:'Escala e Horário por Dia',
     checkoutDias:'Checkout por Dia',
     fechamentoNovo:'Fechamento Financeiro',
     aprovacao:'Aprovação do Gestor',
+    contratos:'Contrato Individual',
     cracha:'Impressão de Crachás'
   };
   return nomes[subTab] || 'Etapa do Evento';
@@ -2994,10 +3338,12 @@ function renderEventoDetail(main){
       <div class="subtab ${subTab==='cpfsAutorizados'?'active':''}" data-sub="cpfsAutorizados">CPFs Autorizados</div>
       <div class="subtab ${subTab==='preescala'?'active':''}" data-sub="preescala">Pré-Escala<span class="count">${interessados.filter(p=>(p.status||'pendente')==='pendente').length}</span></div>
       <div class="subtab ${subTab==='escala'?'active':''}" data-sub="escala">Escala Oficial<span class="count">${staff.filter(s=>s.escalado).length}</span></div>
+      <div class="subtab ${subTab==='comunicacaoPF'?'active':''}" data-sub="comunicacaoPF">Comunicação PF</div>
       <div class="subtab ${subTab==='escalaDias'?'active':''}" data-sub="escalaDias">Escala &amp; Horário por Dia</div>
       <div class="subtab ${subTab==='checkoutDias'?'active':''}" data-sub="checkoutDias">Checkout por Dia</div>
       <div class="subtab ${subTab==='fechamentoNovo'?'active':''}" data-sub="fechamentoNovo">Fechamento Financeiro</div>
       <div class="subtab ${subTab==='aprovacao'?'active':''}" data-sub="aprovacao">Aprovação do Gestor</div>
+      <div class="subtab ${subTab==='contratos'?'active':''}" data-sub="contratos">Contrato Individual</div>
       <div class="subtab ${subTab==='cracha'?'active':''}" data-sub="cracha">Impressão de Crachás</div>
     </div>
     <div class="panel" id="panelContent"></div>
@@ -3028,14 +3374,18 @@ function renderEventoDetail(main){
   if(subTab==='escalaDias') panel.innerHTML=renderEscalaHorarioDias();
   if(subTab==='checkoutDias') panel.innerHTML=renderCheckoutDias();
   if(subTab==='fechamentoNovo') panel.innerHTML=renderFechamentoNovo();
+  if(subTab==='comunicacaoPF') panel.innerHTML=renderComunicacaoPF();
+  if(subTab==='contratos') panel.innerHTML=renderContratoIndividual();
   if(subTab==='cracha') panel.innerHTML=renderImpressaoCrachas();
   attachDetailHandlers();
   if(subTab==='cpfsAutorizados' && gestorUnlocked) attachCpfsAutorizadosHandlers();
   if(subTab==='escalaDias' && gestorUnlocked) attachEscalaHorarioHandlers();
   if(subTab==='checkoutDias' && gestorUnlocked) attachCheckoutHandlers();
   if(subTab==='fechamentoNovo' && gestorUnlocked) attachFechamentoHandlers();
+  if(subTab==='comunicacaoPF' && gestorUnlocked) attachComunicacaoPFHandlers();
+  if(subTab==='contratos' && gestorUnlocked) attachContratoIndividualHandlers();
   if(subTab==='cracha' && gestorUnlocked) attachImpressaoCrachasHandlers();
-  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo'||subTab==='cpfsAutorizados'||subTab==='cracha') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); await loadCpfsAutorizadosEvento(); await loadColaboradoresBanco(); renderShell(); });
+  if((subTab==='aprovacao'||subTab==='valoresFuncao'||subTab==='escalaDias'||subTab==='checkoutDias'||subTab==='fechamentoNovo'||subTab==='cpfsAutorizados'||subTab==='comunicacaoPF'||subTab==='contratos'||subTab==='cracha') && !gestorUnlocked) attachLockHandler(async ()=>{ await loadDiasEscalaPresenca(); await loadCpfsAutorizadosEvento(); await loadColaboradoresBanco(); renderShell(); });
 }
 
 function renderPreEscala(){
@@ -5095,6 +5445,111 @@ function statusCrachaColaborador(cadastro){
   const faltando=CAMPOS_OBRIGATORIOS_CRACHA.filter(campo=>!cadastro[campo]).map(campo=>rotulos[campo]);
   return {completo:faltando.length===0, faltando};
 }
+/* Colaboradores elegíveis a contrato SAMSEG: só funções com modelo
+   oficial aprovado (Vigilante/Supervisor/Coordenador, via
+   ehFuncaoVigilante já existente). Outras funções não têm modelo
+   aprovado — não inventamos contrato para elas. */
+function _vigilantesEscaladosParaContrato(){
+  return staff.filter(s=>s.escalado && ehFuncaoVigilante(s.funcao));
+}
+let _loteContratoSelecionados=new Set();
+function renderContratoIndividual(){
+  if(!gestorUnlocked) return lockScreenHtml('O Contrato Individual só fica visível para o gestor.');
+  const ev=currentEvent();
+  if(ev.status==='aberto'){
+    return `<div class="empty"><b>🔒 Contrato Individual bloqueado</b>Disponível somente após a Aprovação do Gestor para este evento.</div>`;
+  }
+  const vigilantes=_vigilantesEscaladosParaContrato();
+  const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
+  if(!vigilantes.length){
+    return `<div class="empty"><b>Nenhum colaborador elegível</b>O Contrato Individual (modelo SAMSEG) está disponível apenas para Vigilante, Supervisor e Coordenador escalados.</div>`;
+  }
+  return `
+    <div class="card-title">Contrato Individual de Trabalho Eventual</div>
+    <div class="card-sub">Modelo oficial SAMSEG SEGURANÇA LTDA — disponível para Vigilante, Supervisor e Coordenador escalados na Escala Oficial. Datas e horários do contrato são informados manualmente abaixo (não são herdados automaticamente da Escala Oficial).</div>
+    ${faltamDadosEvento.length ? `<div class="empty" style="margin-top:10px;"><b>⚠️ Dados do evento pendentes</b>${faltamDadosEvento.map(f=>escapeHtml(f)).join(', ')} — atualize em "Editar" no topo do evento.</div>` : ''}
+    <div class="add-row" style="margin-top:14px;">
+      <div class="field"><label>Data de início do contrato</label><input type="date" id="ctrDataInicio"></div>
+      <div class="field"><label>Data de término do contrato</label><input type="date" id="ctrDataFim"></div>
+      <div class="field"><label>Horário de início</label><input type="time" id="ctrHoraInicio"></div>
+      <div class="field"><label>Horário de término</label><input type="time" id="ctrHoraFim"></div>
+      <div class="field"><label>Quantidade de horas</label><input type="number" id="ctrHoras" min="1" step="1" style="width:90px;"></div>
+    </div>
+    <div style="margin:12px 0;"><button class="btn btn-ghost btn-sm" id="btnSelecionarTodosContrato">Selecionar todos</button></div>
+    <table>
+      <thead><tr><th></th><th>Nome</th><th>CPF</th><th>Função</th><th>Valor/plantão</th></tr></thead>
+      <tbody>
+        ${vigilantes.map(s=>{
+          const valorFuncao=getFuncaoRateForEvent(ev, s.funcao)||0;
+          return `<tr data-id="${s.id}">
+            <td><input type="checkbox" class="chk-contrato" ${_loteContratoSelecionados.has(s.id)?'checked':''}></td>
+            <td>${escapeHtml(nomeExibicao(s.nome))}</td>
+            <td class="mono">${escapeHtml(s.cpf?formatCpf(s.cpf):'—')}</td>
+            <td>${escapeHtml(s.funcao||'—')}</td>
+            <td>${brl(valorFuncao)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div id="contratoErro" style="color:var(--red); font-size:13px; margin-top:10px; white-space:pre-line;"></div>
+    <button class="btn btn-amber" id="btnGerarContratos" style="margin-top:16px;">Gerar contratos selecionados (PDF)</button>
+  `;
+}
+function attachContratoIndividualHandlers(){
+  document.querySelectorAll('.chk-contrato').forEach(chk=>{
+    chk.onchange=(e)=>{
+      const id=e.target.closest('tr').dataset.id;
+      if(e.target.checked) _loteContratoSelecionados.add(id); else _loteContratoSelecionados.delete(id);
+    };
+  });
+  const btnTodos=document.getElementById('btnSelecionarTodosContrato');
+  if(btnTodos) btnTodos.onclick=()=>{
+    const vigilantes=_vigilantesEscaladosParaContrato();
+    const todosJaSelecionados=vigilantes.every(s=>_loteContratoSelecionados.has(s.id));
+    vigilantes.forEach(s=> todosJaSelecionados ? _loteContratoSelecionados.delete(s.id) : _loteContratoSelecionados.add(s.id));
+    const lista=document.getElementById('panelContent');
+    if(lista){ lista.innerHTML=renderContratoIndividual(); attachContratoIndividualHandlers(); }
+  };
+  const btnGerar=document.getElementById('btnGerarContratos');
+  if(!btnGerar) return;
+  btnGerar.onclick=()=>{
+    const erroBox=document.getElementById('contratoErro');
+    erroBox.textContent='';
+    const ev=currentEvent();
+    const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
+    const lote={
+      dataInicio:document.getElementById('ctrDataInicio').value,
+      dataFim:document.getElementById('ctrDataFim').value,
+      horaInicio:document.getElementById('ctrHoraInicio').value,
+      horaFim:document.getElementById('ctrHoraFim').value,
+      horas:parseFloat(document.getElementById('ctrHoras').value)||0,
+    };
+    const faltandoLote=[];
+    if(!lote.dataInicio) faltandoLote.push('Data de início do contrato');
+    if(!lote.dataFim) faltandoLote.push('Data de término do contrato');
+    if(!lote.horaInicio) faltandoLote.push('Horário de início');
+    if(!lote.horaFim) faltandoLote.push('Horário de término');
+    if(!lote.horas) faltandoLote.push('Quantidade de horas');
+    const selecionados=_vigilantesEscaladosParaContrato().filter(s=>_loteContratoSelecionados.has(s.id));
+    if(!selecionados.length) faltandoLote.push('Selecione ao menos um colaborador');
+    if(faltamDadosEvento.length || faltandoLote.length){
+      erroBox.textContent='Não é possível gerar os contratos. Pendências:\n'+[...faltamDadosEvento,...faltandoLote].map(f=>'- '+f).join('\n');
+      return;
+    }
+    let gerados=0;
+    selecionados.forEach(s=>{
+      const colabBanco=buscarColaboradorPorCpf(s.cpf);
+      const colab={ nome:s.nome, cpf:s.cpf, funcao:s.funcao, identidade: colabBanco&&colabBanco.identidade };
+      const doc=_gerarPdfContrato(colab, lote, ev);
+      if(!doc) return;
+      const mesNum=(lote.dataInicio||'').split('-')[1]||'00';
+      const nomeArquivo=`${mesNum}_${normalizarNomeArquivo(s.nome)}_${normalizarNomeArquivo(ev.evento)}_${(lote.dataInicio||'').split('-')[0]||'0000'}.pdf`;
+      doc.save(nomeArquivo);
+      gerados++;
+    });
+    if(gerados) showToast(`${gerados} contrato(s) gerado(s).`);
+  };
+}
 function renderImpressaoCrachas(){
   if(!gestorUnlocked) return lockScreenHtml('A impressão de crachás só fica visível para o gestor.');
   const ev=currentEvent();
@@ -6468,10 +6923,21 @@ if('serviceWorker' in navigator){
       console.error('Falha ao registrar o Service Worker (PWA):', err);
     });
 
-    let jaRecarregou = false;
+    /* CORREÇÃO — causa provável do ERR_FAILED relatado: a variável
+       "jaRecarregou" era LOCAL e reiniciava a false a cada reload da
+       página, então não protegia de verdade contra um loop de
+       recarregamento (se o controllerchange disparasse de novo logo
+       após o reload — cenário comum na primeira instalação do SW,
+       quando clients.claim() assume controle imediatamente — o reload
+       podia se repetir indefinidamente). Um loop de reload é uma causa
+       conhecida do Chrome abortar a navegação com ERR_FAILED. Usa
+       sessionStorage (sobrevive a reload(), só é limpo ao fechar a
+       aba) para garantir NO MÁXIMO 1 reload automático por sessão. */
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if(jaRecarregou) return; // evita loop de reload
-      jaRecarregou = true;
+      try{
+        if(sessionStorage.getItem('samsegSwReloaded')==='1') return;
+        sessionStorage.setItem('samsegSwReloaded','1');
+      }catch(e){ /* sessionStorage bloqueado (modo privado etc.) — segue sem a trava extra, mas não quebra o app */ }
       window.location.reload();
     });
   });
