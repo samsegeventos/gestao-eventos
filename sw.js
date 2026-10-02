@@ -11,10 +11,18 @@
       continuar abrindo quando o dispositivo estiver OFFLINE.
    2) Nenhum "pre-cache" agressivo no install — não guardamos uma
       cópia do sistema de antemão que possa ficar desatualizada.
-   3) skipWaiting()+clients.claim(): assim que uma nova versão deste
-      arquivo é publicada, ela assume o controle imediatamente, sem
-      esperar todas as abas antigas fecharem.
+   3) skipWaiting(): assim que uma nova versão deste arquivo é
+      instalada, ela fica pronta e ativa imediatamente, sem esperar
+      todas as abas antigas fecharem. NÃO chamamos mais
+      self.clients.claim() — abas já abertas continuam com o Service
+      Worker que já as controlava até a PRÓXIMA navegação/recarga
+      (nunca no meio de uma em andamento); só uma aba aberta depois
+      desta instalação é que já nasce controlada pela nova versão.
    4) O "activate" apaga qualquer cache de uma versão anterior.
+   5) Na navegação, uma falha ao salvar em cache (CacheStorage) nunca
+      derruba a página: a resposta de rede é devolvida ao navegador
+      assim que chega, e a gravação em cache acontece à parte, depois,
+      sem poder interferir nela.
 
    IMPORTANTE PARA QUEM FOR PUBLICAR UMA NOVA VERSÃO:
    Troque o valor de CACHE_VERSION abaixo (por exemplo, para o mesmo
@@ -70,21 +78,47 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
+          // A rede é a fonte da verdade: se ela responder, a página é
+          // devolvida IMEDIATAMENTE — o CacheStorage nunca entra no
+          // caminho crítico da resposta. Regra: falha de cache != falha
+          // de navegação.
           const respostaRede = await fetch(requisicao);
-          const cache = await caches.open(CACHE_VERSION);
-          cache.put(requisicao, respostaRede.clone());
+          const cloneParaCache = respostaRede.clone(); // clonar já, antes de qualquer outra coisa
+
+          // Salvar no cache é só uma otimização para uso offline futuro.
+          // event.waitUntil() mantém o Service Worker vivo tempo
+          // suficiente para essa tarefa terminar, mas SEM atrasar nem
+          // condicionar a resposta já devolvida na linha abaixo. Se
+          // caches.open()/cache.put() falharem (como no erro real
+          // encontrado: "UnknownError: Failed to execute 'open' on
+          // 'CacheStorage'"), isso vira só um aviso no console — nunca
+          // um ERR_FAILED para quem está navegando.
+          event.waitUntil(
+            (async () => {
+              try {
+                const cache = await caches.open(CACHE_VERSION);
+                await cache.put(requisicao, cloneParaCache);
+              } catch (erroCache) {
+                console.warn('[SW] Não foi possível salvar a navegação em cache (a página foi entregue normalmente mesmo assim):', erroCache && erroCache.message);
+              }
+            })()
+          );
+
           return respostaRede;
-        } catch (erro) {
-          // === DIAGNÓSTICO TEMPORÁRIO — remover depois do teste ===
-          console.error('[SAMSEG-DIAG] fetch(requisicao) falhou na navegação:', {
-            nome: erro && erro.name,
-            mensagem: erro && erro.message,
-            pilha: erro && erro.stack,
-            url: requisicao.url
-          });
-          // === FIM DO DIAGNÓSTICO — nada abaixo desta linha muda ===
-          const respostaCache = await caches.match(requisicao);
-          return respostaCache || Response.error();
+        } catch (erroRede) {
+          // A rede falhou de verdade (ex.: offline) — só agora faz
+          // sentido tentar o cache como reserva.
+          try {
+            const respostaCache = await caches.match(requisicao);
+            if (respostaCache) return respostaCache;
+          } catch (erroCacheMatch) {
+            console.warn('[SW] Falha também ao consultar o cache como reserva:', erroCacheMatch && erroCacheMatch.message);
+          }
+          // Sem rede E sem cache disponível: não há mais nenhuma
+          // resposta possível — aqui sim Response.error() é o
+          // resultado correto (não um bug, é o cenário real "offline
+          // e sem nada salvo").
+          return Response.error();
         }
       })()
     );
