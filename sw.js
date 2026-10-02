@@ -42,8 +42,13 @@ self.addEventListener('activate', (event) => {
           .filter((nome) => nome.startsWith('samseg-pwa-') && nome !== CACHE_VERSION)
           .map((nome) => caches.delete(nome))
       );
-      // Assume o controle das abas já abertas imediatamente.
-      await self.clients.claim();
+      /* NÃO chamamos mais self.clients.claim() aqui. Motivo: claim()
+         força o Service Worker a assumir controle imediato de abas
+         que JÁ ESTÃO abertas/carregando — inclusive a própria aba no
+         meio de uma navegação em andamento. Sem essa chamada, o SW
+         continua assumindo controle normalmente, só que da forma
+         padrão do navegador: na PRÓXIMA navegação/recarregamento,
+         nunca no meio de uma que já está em curso. */
     })()
   );
 });
@@ -65,7 +70,7 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       (async () => {
         try {
-          const respostaRede = await fetch(requisicao, { cache: 'no-store' });
+          const respostaRede = await fetch(requisicao);
           const cache = await caches.open(CACHE_VERSION);
           cache.put(requisicao, respostaRede.clone());
           return respostaRede;
