@@ -126,17 +126,43 @@ self.addEventListener('fetch', (event) => {
   }
 
   // Demais recursos (fontes, ícones, manifest): também network-first,
-  // com cache só como reserva para uso offline.
+  // com cache só como reserva para uso offline. Mesmo padrão já
+  // validado no branch de navegação acima: a rede decide a resposta;
+  // o CacheStorage nunca entra no caminho crítico dela.
   event.respondWith(
     (async () => {
       try {
         const respostaRede = await fetch(requisicao);
-        const cache = await caches.open(CACHE_VERSION);
-        cache.put(requisicao, respostaRede.clone());
+        const cloneParaCache = respostaRede.clone(); // clonar já, antes de qualquer outra coisa
+
+        // Salvar em cache é só otimização para uso offline futuro —
+        // acontece à parte, sem poder atrasar nem substituir a
+        // resposta de rede já devolvida logo abaixo.
+        event.waitUntil(
+          (async () => {
+            try {
+              const cache = await caches.open(CACHE_VERSION);
+              await cache.put(requisicao, cloneParaCache);
+            } catch (erroCache) {
+              console.warn('[SW] Não foi possível salvar recurso em cache; recurso entregue normalmente:', erroCache && erroCache.message);
+            }
+          })()
+        );
+
         return respostaRede;
-      } catch (erro) {
-        const respostaCache = await caches.match(requisicao);
-        return respostaCache || Response.error();
+      } catch (erroRede) {
+        // A rede falhou de verdade (ex.: offline) — só agora faz
+        // sentido tentar o cache como reserva.
+        try {
+          const respostaCache = await caches.match(requisicao);
+          if (respostaCache) return respostaCache;
+        } catch (erroCacheMatch) {
+          console.warn('[SW] Falha ao consultar cache como reserva:', erroCacheMatch && erroCacheMatch.message);
+        }
+        // Sem rede E sem cache disponível: não há mais nenhuma
+        // resposta possível — Response.error() é o resultado correto
+        // aqui (cenário real "offline e sem nada salvo").
+        return Response.error();
       }
     })()
   );
