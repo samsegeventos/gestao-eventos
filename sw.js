@@ -75,6 +75,14 @@ self.addEventListener('fetch', (event) => {
           cache.put(requisicao, respostaRede.clone());
           return respostaRede;
         } catch (erro) {
+          // === DIAGNÓSTICO TEMPORÁRIO — remover depois do teste ===
+          console.error('[SAMSEG-DIAG] fetch(requisicao) falhou na navegação:', {
+            nome: erro && erro.name,
+            mensagem: erro && erro.message,
+            pilha: erro && erro.stack,
+            url: requisicao.url
+          });
+          // === FIM DO DIAGNÓSTICO — nada abaixo desta linha muda ===
           const respostaCache = await caches.match(requisicao);
           return respostaCache || Response.error();
         }
