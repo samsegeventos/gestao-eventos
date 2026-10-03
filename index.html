@@ -736,13 +736,18 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <!-- Comunicação PF (gera .xlsx real) e Contrato Individual (gera .pdf real) —
      nenhuma lib de geração de documento existia antes disso no projeto. -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Comunicação PF: ExcelJS (substituindo SheetJS) — confirmado empiricamente
+     (gerando um .xlsx real e inspecionando o XML interno) que esta build
+     "exceljs.min.js" carrega e funciona diretamente neste documento, sem
+     bundler, e GRAVA estilos de célula de verdade (fonte/cor/preenchimento/
+     borda) — o que o SheetJS Community não fazia. -->
+<script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <script>
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '02/10/2026 21:25';
+const APP_VERSION = '03/10/2026 14:23';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1113,6 +1118,12 @@ let interessados = [];
    sessão authenticated, exceto evento_dias que tem SELECT aberto). */
 let eventoDias = [];
 let ultimoErroEventoDias = null; // diagnóstico visível: null = consulta OK mas 0 linhas; string = erro real do Supabase
+/* Mesmo padrão de diagnóstico de ultimoErroEventoDias, agora também
+   para as 4 fontes de loadDiasEscalaPresenca() — null = sem falha na
+   última tentativa; string = mensagem do erro real. Usado para a
+   interface nunca confundir "falha ao carregar" com "realmente vazio". */
+let ultimoErroEscalaDias = null;
+let ultimoErroParticipacoes = null;
 let participacoesNovas = [];
 let escalaDias = [];
 let presencasNovas = [];
@@ -1236,14 +1247,57 @@ async function loadDiasEscalaPresenca(){
   if(diaSelecionadoPresenca==null && eventoDias.length) diaSelecionadoPresenca=eventoDias[0].id;
   if(!gestorUnlocked){ participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
   try{
-    const [{data:parts,error:e1},{data:esc,error:e2},{data:pres,error:e3},{data:fech,error:e4}]=await Promise.all([
+    /* CORREÇÃO — causa raiz do Checkout às vezes mostrando "Ninguém
+       escalado" mesmo com gente escalada: antes, Promise.all + "if(eN)
+       throw eN" fazia UMA falha isolada em QUALQUER uma das 4 RPCs
+       (inclusive fechamento_evento, que não é usada pelo Checkout)
+       derrubar as OUTRAS 3 também, através do catch externo que
+       esvaziava tudo. Agora cada uma é tratada de forma independente
+       (Promise.allSettled): uma falha pontual (rede/timeout) só afeta
+       a fonte que realmente falhou, nunca as outras que tiveram
+       sucesso — e o gestor é avisado, em vez de ver silêncio. */
+    const [rParts,rEsc,rPres,rFech]=await Promise.allSettled([
       sb.rpc('listar_participacoes_evento',{p_evento_id:currentEventId}),
       sb.rpc('listar_escala_evento',{p_evento_id:currentEventId}),
       sb.rpc('listar_presencas_evento',{p_evento_id:currentEventId}),
       sb.rpc('fechamento_evento',{p_evento_id:currentEventId})
     ]);
-    if(e1) throw e1; if(e2) throw e2; if(e3) throw e3; if(e4) throw e4;
-    participacoesNovas=parts||[]; escalaDias=esc||[]; presencasNovas=pres||[];
+    /* CORREÇÃO (2ª rodada) — "extrair" agora recebe o valor que JÁ
+       estava em memória (valorAnterior) e, em caso de falha, devolve
+       ESSE MESMO valor em vez de [] — uma falha transitória de rede
+       nunca mais destrói dados que já tinham sido carregados com
+       sucesso numa chamada anterior. Só fica [] quando realmente não
+       havia nada carregado ainda (primeira abertura do evento) — o
+       que já é "estado seguro" (não inventa dado), sem mascarar dados
+       REAIS perdidos por um erro de rede pontual. O terceiro valor
+       retornado (mensagem de erro ou null) alimenta
+       ultimoErroEscalaDias/ultimoErroParticipacoes, para a interface
+       poder distinguir "realmente vazio" de "falha ao carregar agora"
+       — mesmo padrão de diagnóstico já usado em ultimoErroEventoDias. */
+    const extrair=(resultado, rotulo, valorAnterior)=>{
+      if(resultado.status!=='fulfilled'){
+        const msg=(resultado.reason&&resultado.reason.message)||'falha de rede';
+        console.error(`Falha ao carregar ${rotulo}:`, resultado.reason);
+        showToast(`Não foi possível carregar ${rotulo} agora. Tente novamente.`);
+        return {valor:valorAnterior, erro:msg};
+      }
+      const {data,error}=resultado.value;
+      if(error){
+        console.error(`Erro ao carregar ${rotulo}:`, error);
+        showToast(`Não foi possível carregar ${rotulo} agora. Tente novamente.`);
+        return {valor:valorAnterior, erro:error.message||'erro desconhecido'};
+      }
+      return {valor:data||[], erro:null};
+    };
+    const fechamentoDadosAnterior=fechamentoDados; // preservado se "fech" falhar (ver abaixo)
+    const resParts=extrair(rParts,'as participações do evento', participacoesNovas);
+    participacoesNovas=resParts.valor; ultimoErroParticipacoes=resParts.erro;
+    const resEsc=extrair(rEsc,'a escala por dia', escalaDias);
+    escalaDias=resEsc.valor; ultimoErroEscalaDias=resEsc.erro;
+    const resPres=extrair(rPres,'as presenças', presencasNovas);
+    presencasNovas=resPres.valor;
+    const resFech=extrair(rFech,'o fechamento financeiro', null);
+    const fech=resFech.erro ? null : resFech.valor;
     /* Participações anuladas nunca entram no fechamento financeiro —
        filtradas AQUI, num único ponto central, para propagar
        automaticamente para toda tela que lê fechamentoDados
@@ -1255,8 +1309,15 @@ async function loadDiasEscalaPresenca(){
        fallback seguro: se a coluna "anulada" ainda não existir no
        retorno da RPC (antes do SQL desta rodada ser aplicado), o
        filtro não remove ninguém, comportamento idêntico ao atual. */
-    const idsAnulados=new Set(participacoesNovas.filter(p=>p.anulada).map(p=>pid(p)));
-    fechamentoDados=(fech||[]).filter(f=>!idsAnulados.has(f.participacao_id));
+    if(resFech.erro){
+      /* fechamento_evento falhou nesta tentativa — preserva o valor
+         anterior em vez de recalcular com dado ausente (nunca zera
+         por causa de uma falha isolada desta RPC específica). */
+      fechamentoDados=fechamentoDadosAnterior;
+    } else {
+      const idsAnulados=new Set(participacoesNovas.filter(p=>p.anulada).map(p=>pid(p)));
+      fechamentoDados=(fech||[]).filter(f=>!idsAnulados.has(f.participacao_id));
+    }
 
     /* NOVO — pré-calcula conflitos de escala em outro evento (Ajuste 1
        da impressão/prévia), reaproveitando verificar_conflito_cpf_dia
@@ -2177,7 +2238,7 @@ function attachSidebarHandlers(){
            Gestor sem ter passado antes por Fechamento). */
         if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca();
         if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento();
-        if(subTab==='cracha') await loadColaboradoresBanco();
+        if(subTab==='cracha' || subTab==='comunicacaoPF') await loadColaboradoresBanco();
       }
       else { section=nav; if(nav==='colaboradores') await loadColaboradoresBanco(); }
       closeMobileMenu();
@@ -2495,17 +2556,41 @@ function renderComunicacaoPF(){
     <div style="margin-bottom:14px;"><span class="badge ${status==='pronta'?'pago':'pendente'}">${statusTexto}</span></div>
     ${!vigilantes.length ? `<div class="empty"><b>Nenhum vigilante escalado</b>Escale ao menos um Vigilante/Supervisor/Coordenador na Escala Oficial.</div>` : `
       <table>
-        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Função</th><th>Identidade</th><th>Reciclagem</th></tr></thead>
+        <thead><tr><th>#</th><th>Nome</th><th>CPF</th><th>Função</th><th>Identidade</th><th>Vencimento</th><th>Status Reciclagem</th><th>Ação</th></tr></thead>
         <tbody>
           ${vigilantes.map((s,i)=>{
+            /* Fonte dos dados ATUAIS do colaborador: sempre
+               buscarColaboradorPorCpf(), que agora reflete o Banco de
+               Colaboradores de verdade (loadColaboradoresBanco() passa
+               a rodar também ao entrar nesta aba — ver correção no
+               dispatcher). A ESCALA (vigilantes) só decide QUEM
+               aparece; o BANCO decide QUAIS DADOS aparecem — nunca os
+               dois misturados na mesma fonte. */
             const colab=buscarColaboradorPorCpf(s.cpf);
-            return `<tr>
+            /* Status de reciclagem: MESMA função e MESMO mapeamento de
+               cor/rótulo já usados no Banco de Colaboradores — nada
+               novo inventado. "CONFERIDA" reaproveita o campo
+               reciclagem_conferida já existente. */
+            const CORES_RECICLAGEM_PF={vermelho:'var(--red)', amarelo:'var(--amber)', verde:'var(--teal)', cinza:'var(--muted)'};
+            const statusRec=colab&&colab.reciclagem ? corStatusReciclagem(colab.reciclagem) : null;
+            return `<tr data-cpf="${s.cpf}">
               <td class="mono">${i+1}</td>
               <td>${escapeHtml(nomeExibicao(s.nome))}</td>
               <td class="mono">${escapeHtml(s.cpf?formatCpf(s.cpf):'—')}</td>
               <td>${escapeHtml(s.funcao||'—')}</td>
               <td>${colab&&colab.identidade?escapeHtml(colab.identidade):'<span style="color:var(--red);">faltando</span>'}</td>
               <td>${colab&&colab.reciclagem?formatDate(colab.reciclagem):'<span style="color:var(--red);">faltando</span>'}</td>
+              <td>
+                ${statusRec ? `
+                  <div style="display:flex; flex-direction:column; gap:4px; align-items:flex-start;">
+                    <span style="color:${CORES_RECICLAGEM_PF[statusRec.cor]}; font-weight:600;" title="${escapeHtml(statusRec.rotulo)}">${escapeHtml(statusRec.rotulo)}</span>
+                    ${colab.reciclagem_conferida===true
+                      ? `<span style="color:var(--teal); font-weight:700; font-size:11px;">✅ CONFERIDA</span>`
+                      : `<span style="color:var(--amber); font-weight:700; font-size:11px;">⚠️ NÃO CONFERIDA</span>`}
+                  </div>
+                ` : '<span style="color:var(--red);">—</span>'}
+              </td>
+              <td><button class="btn btn-ghost btn-sm btn-editar-dados-pf">Editar Dados</button></td>
             </tr>`;
           }).join('')}
         </tbody>
@@ -2516,68 +2601,173 @@ function renderComunicacaoPF(){
   `;
 }
 function attachComunicacaoPFHandlers(){
+  /* Botão "Editar Dados" — reutiliza EXATAMENTE o mesmo formulário do
+     Banco de Colaboradores (abrirFormularioColaboradorBanco), a mesma
+     RPC de salvamento, a mesma propagação (propagar_dados_colaborador)
+     e o mesmo recarregamento (loadColaboradoresBanco()+renderShell())
+     já usados lá — nenhum formulário/lógica duplicado. Como
+     renderShell() re-renderiza a tela atual, e o subTab continua
+     'comunicacaoPF' no momento do clique, a própria PF é redesenhada
+     automaticamente com os dados já atualizados após salvar. */
+  document.querySelectorAll('.btn-editar-dados-pf').forEach(btn=>{
+    btn.onclick=()=>{
+      const cpf=btn.closest('[data-cpf]').dataset.cpf;
+      abrirFormularioColaboradorBanco(buscarColaboradorPorCpf(cpf));
+    };
+  });
   const btn=document.getElementById('btnGerarPF');
   if(!btn) return;
-  btn.onclick=()=>{
+  btn.onclick=async ()=>{
     const ev=currentEvent();
     const vigilantes=_vigilantesEscaladosParaPF();
     const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
     if(!vigilantes.length || faltamDadosEvento.length){ showToast('Não é possível gerar: dados pendentes.'); return; }
-    if(typeof XLSX==='undefined'){ showToast('Biblioteca de geração de planilha não carregou. Verifique sua conexão e tente novamente.'); return; }
+    if(typeof ExcelJS==='undefined'){ showToast('Biblioteca de geração de planilha não carregou. Verifique sua conexão e tente novamente.'); return; }
 
-    /* Monta a planilha reproduzindo a estrutura do modelo oficial
-       (SESI SETE LAGOAS ...xlsx): cabeçalho EMPRESA, LOCAL+DATA,
-       categoria+VENCIMENTO, colunas Nº/NOME/CPF/IDENTIDADE/VENCIMENTO,
-       linhas de dados, rodapé com os dados do evento. A 2ª aba do
-       modelo original (lista auxiliar "LISTA SAMSEG (2)") NÃO faz
-       parte do arquivo gerado, como já definido. */
-    const linhas=[];
-    linhas.push(['EMPRESA: SAMSEG SEGURANÇA LTDA.']);
-    linhas.push(['LOCAL:', ev.localEvento||'', '', '', isoToBr(ev.data)]);
-    linhas.push(['VIGILANTES','','','','VENCIMENTO']);
-    linhas.push(['Nº','NOME','CPF','IDENTIDADE','']);
-    vigilantes.forEach((s,i)=>{
-      const colab=buscarColaboradorPorCpf(s.cpf);
-      linhas.push([i+1, nomeExibicao(s.nome), formatCpf(s.cpf||''), (colab&&colab.identidade)||'', (colab&&colab.reciclagem)?formatDate(colab.reciclagem):'']);
+    /* Monta a planilha reproduzindo a estrutura e o VISUAL do modelo
+       oficial (imagem de referência): cabeçalho EMPRESA, LOCAL+DATA,
+       categoria VIGILANTES (vermelho) + cabeçalho de colunas (vermelho),
+       5 linhas previstas (mesmo com menos vigilantes), rodapé com os
+       dados do evento. Usa ExcelJS (confirmado empiricamente que grava
+       estilos de verdade no navegador, diferente do SheetJS usado antes).
+       Mesma fonte de dados de sempre — Escala Oficial + ehFuncaoVigilante
+       + Banco de Colaboradores — nada disso foi alterado. */
+    const VERMELHO='FFC00000', BRANCO='FFFFFFFF', PRETO='FF000000';
+    const bordaFina={ top:{style:'thin',color:{argb:PRETO}}, bottom:{style:'thin',color:{argb:PRETO}}, left:{style:'thin',color:{argb:PRETO}}, right:{style:'thin',color:{argb:PRETO}} };
+    const fillVermelho={ type:'pattern', pattern:'solid', fgColor:{argb:VERMELHO} };
+
+    const wb=new ExcelJS.Workbook();
+    const ws=wb.addWorksheet((ev.localEvento||'Evento').slice(0,28) || 'Evento');
+    ws.views=[{showGridLines:false}];
+
+    // Larguras (proporção aproximada pedida: Nº estreita, NOME ~40%,
+    // CPF/IDENTIDADE ~17%, VENCIMENTO ~15%)
+    ws.columns=[{width:9},{width:35},{width:17},{width:17},{width:15}];
+
+    // ---- Linha 1: EMPRESA (A1:E1) ----
+    ws.mergeCells('A1:E1');
+    const c1=ws.getCell('A1');
+    c1.value='EMPRESA: SAMSEG SEGURANÇA LTDA.';
+    c1.font={bold:true, size:22, name:'Calibri', color:{argb:PRETO}};
+    c1.alignment={horizontal:'center', vertical:'middle'};
+    ['A1','B1','C1','D1','E1'].forEach(ref=> ws.getCell(ref).border=bordaFina);
+    ws.getRow(1).height=34;
+
+    // ---- Linha 2: LOCAL / DATA ----
+    ws.getCell('A2').value='LOCAL:';
+    ws.getCell('A2').font={bold:true, size:13};
+    ws.getCell('A2').alignment={horizontal:'left', vertical:'middle'};
+    ws.getCell('B2').value=ev.localEvento||'';
+    ws.getCell('B2').font={bold:true, size:13};
+    ws.getCell('B2').alignment={horizontal:'center', vertical:'middle'};
+    ws.mergeCells('C2:E2');
+    ws.getCell('C2').value=isoToBr(ev.data);
+    ws.getCell('C2').font={bold:true, size:13};
+    ws.getCell('C2').alignment={horizontal:'center', vertical:'middle'};
+    ['A2','B2','C2','D2','E2'].forEach(ref=> ws.getCell(ref).border=bordaFina);
+    ws.getRow(2).height=22;
+
+    // ---- Linha 3: VIGILANTES (A3:E3, vermelho) ----
+    ws.mergeCells('A3:E3');
+    const c3=ws.getCell('A3');
+    c3.value='VIGILANTES';
+    c3.font={bold:true, size:16, color:{argb:BRANCO}};
+    c3.fill=fillVermelho;
+    c3.alignment={horizontal:'center', vertical:'middle'};
+    ['A3','B3','C3','D3','E3'].forEach(ref=>{ ws.getCell(ref).fill=fillVermelho; ws.getCell(ref).border=bordaFina; });
+    ws.getRow(3).height=24;
+
+    // ---- Linha 4: cabeçalho de colunas (vermelho) ----
+    const cabecalhos=['Nº','NOME','CPF','IDENTIDADE','VENCIMENTO'];
+    ['A4','B4','C4','D4','E4'].forEach((ref,i)=>{
+      const c=ws.getCell(ref);
+      c.value=cabecalhos[i];
+      c.font={bold:true, size:12, color:{argb:BRANCO}};
+      c.fill=fillVermelho;
+      c.alignment={horizontal:'center', vertical:'middle'};
+      c.border=bordaFina;
     });
-    linhas.push([]);
-    linhas.push(['', `CIDADE DO EVENTO - ${ev.cidadeEvento||''}`]);
-    linhas.push(['', `TIPO DE EVENTO - ${ev.tipoEvento||''}`]);
-    linhas.push(['', `HORARIO DO EVENTO - ${(ev.horaInicio||'')} AS ${(ev.horaFim||'')} HRS`]);
-    linhas.push(['', `CEP - ${ev.cepEvento||''}`]);
-    linhas.push(['', `ENDEREÇO - ${(ev.enderecoEvento||'')}${ev.numeroEvento?', Nº '+ev.numeroEvento:''}`]);
-    linhas.push(['', `DATA DO EVENTO - ${isoToBr(ev.data)}${ev.dataFim && ev.dataFim!==ev.data ? ' a '+isoToBr(ev.dataFim) : ''}`]);
-    linhas.push(['', `LOCAL DO EVENTO - ${ev.localEvento||''}`]);
-    linhas.push(['', `NOME DO EVENTO - ${ev.evento||''}`]);
+    ws.getRow(4).height=22;
 
-    const ws=XLSX.utils.aoa_to_sheet(linhas);
-    ws['!merges']=[
-      {s:{r:0,c:0},e:{r:0,c:3}}, // EMPRESA (A1:D1)
-      {s:{r:1,c:2},e:{r:1,c:4}}, // DATA (C2:E2) — corrigido: antes não existia
-      {s:{r:2,c:4},e:{r:3,c:4}}, // VENCIMENTO (E3:E4) — corrigido: mesclagem antiga estava na linha/célula errada (1x1 sem efeito)
+    // ---- Linhas 5-9: vigilantes (sempre 5 linhas previstas, mesmo com menos) ----
+    for(let i=0;i<5;i++){
+      const linha=5+i;
+      const s=vigilantes[i];
+      const colab=s ? buscarColaboradorPorCpf(s.cpf) : null;
+      const valores=[
+        s? i+1 : '',
+        s? nomeExibicao(s.nome) : '',
+        s? formatCpf(s.cpf||'') : '',
+        s&&colab&&colab.identidade ? colab.identidade : '',
+        s&&colab&&colab.reciclagem ? formatDate(colab.reciclagem) : '',
+      ];
+      ['A','B','C','D','E'].forEach((col,idx)=>{
+        const c=ws.getCell(`${col}${linha}`);
+        c.value=valores[idx];
+        c.font={size:11, color:{argb:PRETO}};
+        c.alignment={horizontal: idx===1?'left':'center', vertical:'middle'};
+        c.border=bordaFina;
+      });
+      ws.getRow(linha).height=19;
+    }
+
+    // ---- Linha de separação (destacada) abaixo da tabela ----
+    const linhaSep=10;
+    ['A','B','C','D','E'].forEach(col=>{ const c=ws.getCell(`${col}${linhaSep}`); c.border=bordaFina; });
+    ws.getRow(linhaSep).height=8;
+
+    // ---- Dados do evento (um campo por linha, rótulo em negrito) ----
+    const camposEvento=[
+      ['CIDADE DO EVENTO', ev.cidadeEvento||''],
+      ['TIPO DE EVENTO', ev.tipoEvento||''],
+      ['HORARIO DO EVENTO', `${ev.horaInicio||''} AS ${ev.horaFim||''} HRS`],
+      ['CEP', ev.cepEvento||''],
+      ['ENDEREÇO', `${ev.enderecoEvento||''}${ev.numeroEvento?', Nº '+ev.numeroEvento:''}`],
+      ['DATA DO EVENTO', `${isoToBr(ev.data)}${ev.dataFim && ev.dataFim!==ev.data ? ' a '+isoToBr(ev.dataFim) : ''}`],
+      ['LOCAL DO EVENTO', ev.localEvento||''],
+      ['NOME DO EVENTO', ev.evento||''],
     ];
-    ws['!cols']=[{wch:5},{wch:35},{wch:18},{wch:16},{wch:16}];
-    /* Configuração de impressão (valores lidos diretamente do arquivo
-       .xlsx fornecido): retrato, papel A4 (código OOXML 9), escala
-       85%, margens em polegadas 0,51/0,51/0,79/0,79/0,31/0,31. O
-       modelo original não define área de impressão explícita
-       (print_area vazio), então não há nada a reproduzir nesse ponto.
-       CONFIRMADO POR TESTE REAL (gerando o arquivo e inspecionando o
-       XML interno): a SheetJS Community 0.18.5 GRAVA corretamente
-       "!margins", mas NÃO grava "!pageSetup" (orientação/papel/escala)
-       — a propriedade é aceita sem erro, mas fica sem efeito no
-       arquivo final. Mantida mesmo assim (não tem custo, é inofensiva,
-       e pode ganhar efeito em versões futuras da biblioteca), mas a
-       limitação é real e confirmada, não presumida. */
-    ws['!pageSetup']={orientation:'portrait', paperSize:9, scale:85};
-    ws['!margins']={left:0.51, right:0.51, top:0.79, bottom:0.79, header:0.31, footer:0.31};
+    /* Rótulo+valor ficam juntos na MESMA célula mesclada (A:E) — igual
+       ao modelo original (confirmado antes: cada campo do rodapé era
+       uma única célula mesclada, não rótulo e valor em colunas
+       separadas). Evita o corte visual que a coluna A (estreita,
+       compartilhada com "Nº" da tabela acima) causava nos rótulos
+       mais longos. O rótulo continua em negrito, dentro do mesmo
+       texto, usando "rich text" (negrito só na parte do rótulo). */
+    camposEvento.forEach(([rotulo,valor],i)=>{
+      const linha=linhaSep+1+i;
+      ws.mergeCells(`A${linha}:E${linha}`);
+      const c=ws.getCell(`A${linha}`);
+      c.value={ richText:[
+        { font:{bold:true, size:11, color:{argb:PRETO}}, text:rotulo+' - ' },
+        { font:{bold:false, size:11, color:{argb:PRETO}}, text:valor },
+      ]};
+      c.alignment={horizontal:'left', vertical:'middle'};
+      ['A','B','C','D','E'].forEach(col=> ws.getCell(`${col}${linha}`).border=bordaFina);
+      ws.getRow(linha).height=18;
+    });
 
-    const wb=XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, (ev.localEvento||'EVENTO').slice(0,28) || 'Evento');
+    // ---- Impressão: retrato, ajustada a 1 página de largura, margens já validadas ----
+    ws.pageSetup={
+      orientation:'portrait',
+      fitToPage:true, fitToWidth:1, fitToHeight:0,
+      margins:{left:0.51, right:0.51, top:0.79, bottom:0.79, header:0.31, footer:0.31},
+    };
 
     const nomeArquivo=`${(ev.data||'').split('-')[2]||'00'}_${nomeMesExtensoMaiusculo(ev.data)}_${normalizarNomeArquivo(ev.evento)}_${(ev.data||'').split('-')[0]||'0000'}.xlsx`;
-    XLSX.writeFile(wb, nomeArquivo);
-    showToast('Lista PF gerada: '+nomeArquivo);
+
+    try{
+      const buffer=await wb.xlsx.writeBuffer();
+      const blob=new Blob([buffer], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement('a');
+      a.href=url; a.download=nomeArquivo;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      showToast('Lista PF gerada: '+nomeArquivo);
+    } catch(erro){
+      showToast('Erro ao gerar a planilha: '+(erro&&erro.message));
+    }
   };
 }
 
@@ -3354,7 +3544,14 @@ function renderEventoDetail(main){
     subTab=novaSubTab;
     if(['escalaDias','checkoutDias','fechamentoNovo','aprovacao'].includes(subTab)) await loadDiasEscalaPresenca();
     if(subTab==='cpfsAutorizados') await loadCpfsAutorizadosEvento();
-    if(subTab==='cracha') await loadColaboradoresBanco();
+    /* CORREÇÃO — a Comunicação PF usa buscarColaboradorPorCpf(), que só
+       lê o array já carregado em memória (colaboradoresBanco); esse
+       array só era recarregado ao abrir Crachás ou a tela global do
+       Banco de Colaboradores. A PF nunca disparava esse recarregamento
+       sozinha, por isso dados editados no Banco só apareciam na PF
+       depois de visitar uma dessas outras telas. Mesmo padrão já usado
+       para "cracha" — nenhuma consulta nova criada. */
+    if(subTab==='cracha' || subTab==='comunicacaoPF') await loadColaboradoresBanco();
     renderShell();
   };
   main.querySelectorAll('.subtab').forEach(t=>{ t.onclick=()=>selecionarEtapaEvento(t.dataset.sub); });
@@ -3919,7 +4116,18 @@ function renderCheckoutDiasLista(){
   const eventoAberto = ev && ev.status==='aberto';
   const escaladosNoDia = participacoesNovas.filter(p=>escaladoNoDia(pid(p), diaId));
   const escaladosFiltrados=filtrarPorNomeOuCpf(escaladosNoDia, checkoutBusca, p=>p.nome, p=>p.cpf);
-  if(!escaladosFiltrados.length) return escaladosNoDia.length ? `<div class="empty"><b>Nenhum resultado para essa busca</b></div>` : `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`;
+  if(!escaladosFiltrados.length){
+    if(escaladosNoDia.length) return `<div class="empty"><b>Nenhum resultado para essa busca</b></div>`;
+    /* Distingue "realmente ninguém escalado" de "falha ao carregar
+       agora" (ultimoErroParticipacoes/ultimoErroEscalaDias) — sem
+       isso, uma falha de rede na primeira abertura do evento parecia
+       silenciosamente "banco vazio", quando na real o problema era
+       só não ter conseguido consultar. */
+    if(ultimoErroParticipacoes || ultimoErroEscalaDias){
+      return `<div class="empty"><b>⚠️ Não foi possível confirmar quem está escalado agora</b>Houve uma falha ao carregar os dados (${escapeHtml(ultimoErroParticipacoes||ultimoErroEscalaDias)}). Tente novamente em instantes.</div>`;
+    }
+    return `<div class="empty"><b>Ninguém escalado para este dia</b>Escale colaboradores em "Escala &amp; Horário por Dia".</div>`;
+  }
   const grupos=agruparPorFuncaoPrincipal(escaladosFiltrados, p=>p.funcao, p=>p.nome);
   return `
     ${renderResumoQuantidadesFuncao(grupos)}
@@ -5428,7 +5636,18 @@ function abrirFormularioColaboradorBanco(existente, forcarBrigadista, forcarDema
    Fonte da lista de escalados: staff[] (Escala Oficial) — nunca a
    Pré-Escala. Fonte dos dados cadastrais: colaboradoresBanco (Banco
    de Colaboradores), casado por CPF. */
-const CAMPOS_OBRIGATORIOS_CRACHA = ['nome','cpf','identidade','data_curso','reciclagem','numero_dpf']; // fácil de ajustar depois — sem foto, sem telefone, sem e-mail, sem data de nascimento
+/* CORREÇÃO — "data_curso" removido desta lista. O formulário de
+   cadastro do colaborador já não pede/grava esse campo há tempo
+   (sempre envia p_data_curso:null às RPCs — ver comentário logo
+   abaixo, já existente) — mas essa lista de obrigatórios continuava
+   exigindo-o, fazendo TODO vigilante aparecer como PENDENTE pedindo
+   "Data do curso", um campo que nunca mais é preenchido por ninguém.
+   O campo oficial de validade é exclusivamente "reciclagem" (Data de
+   vencimento da reciclagem/curso, já no Banco de Colaboradores), que
+   já estava e continua nesta lista. Não alterei
+   CAMPOS_OBRIGATORIOS_CRACHA_BRIGADISTA (linha abaixo) — ela já nunca
+   teve data_curso, o Brigadista não é afetado por esta mudança. */
+const CAMPOS_OBRIGATORIOS_CRACHA = ['nome','cpf','identidade','reciclagem','numero_dpf']; // sem foto, sem telefone, sem e-mail, sem data de nascimento
 /* NOVO — campos obrigatórios equivalentes para Brigadista, paralelos
    aos de Vigilante (constante acima, intocada). Sem numero_dpf (não
    se aplica), com numero_registro_brigadista no lugar. */
@@ -5441,7 +5660,7 @@ function statusCrachaColaboradorBrigadista(cadastro){
 }
 function statusCrachaColaborador(cadastro){
   if(!cadastro) return {completo:false, faltando:['todos os dados (colaborador ainda não preencheu o formulário)']};
-  const rotulos={nome:'nome', cpf:'CPF', identidade:'identidade', data_curso:'data do curso', reciclagem:'reciclagem', numero_dpf:'Nº DPF'};
+  const rotulos={nome:'nome', cpf:'CPF', identidade:'identidade', reciclagem:'Data de vencimento da reciclagem/curso', numero_dpf:'Nº DPF'};
   const faltando=CAMPOS_OBRIGATORIOS_CRACHA.filter(campo=>!cadastro[campo]).map(campo=>rotulos[campo]);
   return {completo:faltando.length===0, faltando};
 }
@@ -5456,9 +5675,14 @@ let _loteContratoSelecionados=new Set();
 function renderContratoIndividual(){
   if(!gestorUnlocked) return lockScreenHtml('O Contrato Individual só fica visível para o gestor.');
   const ev=currentEvent();
-  if(ev.status==='aberto'){
-    return `<div class="empty"><b>🔒 Contrato Individual bloqueado</b>Disponível somente após a Aprovação do Gestor para este evento.</div>`;
-  }
+  /* REMOVIDO (nesta rodada) — bloqueio que exigia ev.status!=='aberto'
+     (ou seja, Fechamento/Aprovação do Gestor concluídos) antes de
+     liberar a listagem. Nova regra: a listagem depende exclusivamente
+     de quem está efetivamente escalado na Escala Oficial
+     (_vigilantesEscaladosParaContrato(), já existente, inalterada) —
+     o evento pode continuar aberto. Nenhuma outra validação (dados do
+     evento, valores por função, modelo, datas/horários do contrato)
+     foi alterada. */
   const vigilantes=_vigilantesEscaladosParaContrato();
   const faltamDadosEvento=validarDadosEventoParaDocumentos(ev);
   if(!vigilantes.length){
