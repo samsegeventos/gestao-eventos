@@ -747,7 +747,7 @@
 /* ================= VERSÃO DO SISTEMA =================
    Identificação fixa desta entrega — não recalculada pelo navegador.
    Atualizar este valor a cada nova rodada de alterações entregue. */
-const APP_VERSION = '03/10/2026 14:23';
+const APP_VERSION = '04/10/2026 15:19';
 
 /* ================= SUPABASE ================= */
 const SUPABASE_URL = 'https://npjunlaohurremzjnirt.supabase.co';
@@ -1124,6 +1124,11 @@ let ultimoErroEventoDias = null; // diagnóstico visível: null = consulta OK ma
    interface nunca confundir "falha ao carregar" com "realmente vazio". */
 let ultimoErroEscalaDias = null;
 let ultimoErroParticipacoes = null;
+/* Sequência das cargas de loadDiasEscalaPresenca() (PROTEÇÃO CONTRA RACE
+   CONDITION — permanente). Cada execução pega um número; só a carga mais
+   RECENTEMENTE INICIADA pode gravar o estado final. Uma carga antiga que
+   termine depois de uma mais nova é descartada, sem sobrescrever nada. */
+let loadDiasEscalaSeq = 0;
 let participacoesNovas = [];
 let escalaDias = [];
 let presencasNovas = [];
@@ -1239,12 +1244,27 @@ function currentEvent(){ return events.find(e=>e.id===currentEventId); }
 /* ================= ETAPA 2 — dados novos (colaboradores/evento_dias/
    participacoes/participacao_dias/presencas) ================= */
 async function loadDiasEscalaPresenca(){
+  /* PROTEÇÃO CONTRA RACE CONDITION — número desta carga. Qualquer ponto
+     abaixo que vier DEPOIS de um await confere "minhaCarga!==
+     loadDiasEscalaSeq": se outra carga mais nova já foi iniciada, esta é
+     antiga e sai sem tocar em NENHUM estado (nem dados, nem erros, nem
+     toasts). Mesmo evento ou não: a mais recente é a única autorizada. */
+  const minhaCarga=++loadDiasEscalaSeq;
   if(!currentEventId){ eventoDias=[]; participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
   const {data:dias,error:errDias}=await sb.from('evento_dias').select('*').eq('evento_id',currentEventId).order('data',{ascending:true});
+  if(minhaCarga!==loadDiasEscalaSeq) return; // carga antiga: descarta
   if(errDias) console.error('Erro ao consultar evento_dias:', errDias);
   ultimoErroEventoDias = errDias ? (errDias.message||'erro desconhecido') : null;
   eventoDias=dias||[];
-  if(diaSelecionadoPresenca==null && eventoDias.length) diaSelecionadoPresenca=eventoDias[0].id;
+  /* CORREÇÃO — diaSelecionadoPresenca é global e antes só era preenchido
+     quando null (1º evento da sessão); ao abrir OUTRO evento, ficava o id
+     de dia do evento anterior, o Checkout filtrava por um dia que não
+     existe neste evento e mostrava "Ninguém escalado" (o <select> exibia
+     a 1ª data só por padrão do navegador). Agora é validado contra o
+     eventoDias recém-carregado, ANTES de qualquer render: se o dia
+     guardado não pertence a este evento, usa o 1º dia. Se pertence
+     (mesmo evento recarregado), a escolha do usuário é mantida. */
+  if(eventoDias.length && !eventoDias.some(d=>String(d.id)===String(diaSelecionadoPresenca))) diaSelecionadoPresenca=eventoDias[0].id;
   if(!gestorUnlocked){ participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; return; }
   try{
     /* CORREÇÃO — causa raiz do Checkout às vezes mostrando "Ninguém
@@ -1274,6 +1294,12 @@ async function loadDiasEscalaPresenca(){
        ultimoErroEscalaDias/ultimoErroParticipacoes, para a interface
        poder distinguir "realmente vazio" de "falha ao carregar agora"
        — mesmo padrão de diagnóstico já usado em ultimoErroEventoDias. */
+    /* Descarte da carga antiga — principal ponto da proteção: as 4 RPCs
+       já voltaram, mas se outra carga mais nova foi iniciada enquanto esta
+       esperava, este resultado é antigo e NÃO pode sobrescrever
+       participacoesNovas/escalaDias/presencasNovas/fechamentoDados nem os
+       ultimoErro* (nem mostrar toast de falha de uma carga superada). */
+    if(minhaCarga!==loadDiasEscalaSeq) return;
     const extrair=(resultado, rotulo, valorAnterior)=>{
       if(resultado.status!=='fulfilled'){
         const msg=(resultado.reason&&resultado.reason.message)||'falha de rede';
@@ -1340,6 +1366,7 @@ async function loadDiasEscalaPresenca(){
         });
       });
       const respostasConflito=await Promise.allSettled(tarefasConflito);
+      if(minhaCarga!==loadDiasEscalaSeq) return; // carga antiga: não grava conflitosPorParticipacao
       const novoConflitosPorParticipacao={};
       respostasConflito.forEach(res=>{
         if(res.status!=='fulfilled') return;
@@ -1355,7 +1382,8 @@ async function loadDiasEscalaPresenca(){
     }
   }catch(err){
     console.error(err);
-    participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[];
+    // carga antiga que falhou não pode zerar o estado gravado por uma carga mais nova
+    if(minhaCarga===loadDiasEscalaSeq){ participacoesNovas=[]; escalaDias=[]; presencasNovas=[]; fechamentoDados=[]; }
   }
 }
 function escaladoNoDia(participacaoId, eventoDiaId){
@@ -2586,7 +2614,12 @@ function renderComunicacaoPF(){
                     <span style="color:${CORES_RECICLAGEM_PF[statusRec.cor]}; font-weight:600;" title="${escapeHtml(statusRec.rotulo)}">${escapeHtml(statusRec.rotulo)}</span>
                     ${colab.reciclagem_conferida===true
                       ? `<span style="color:var(--teal); font-weight:700; font-size:11px;">✅ CONFERIDA</span>`
-                      : `<span style="color:var(--amber); font-weight:700; font-size:11px;">⚠️ NÃO CONFERIDA</span>`}
+                      /* MESMO botão, mesma classe e mesmo data-cpf já
+                         usados no Banco de Colaboradores — nenhuma
+                         lógica/estado/RPC nova. O clique chama
+                         exatamente confirmarConferenciaReciclagem(cpf),
+                         função já existente, reaproveitada sem cópia. */
+                      : `<button class="btn btn-teal btn-sm btn-confirmar-reciclagem" data-cpf="${escapeHtml(s.cpf)}" style="padding:4px 7px; font-size:11px;">✓ Confirmar conferência</button>`}
                   </div>
                 ` : '<span style="color:var(--red);">—</span>'}
               </td>
@@ -2613,6 +2646,20 @@ function attachComunicacaoPFHandlers(){
     btn.onclick=()=>{
       const cpf=btn.closest('[data-cpf]').dataset.cpf;
       abrirFormularioColaboradorBanco(buscarColaboradorPorCpf(cpf));
+    };
+  });
+  /* Botão "Confirmar conferência" — reutiliza EXATAMENTE a mesma
+     confirmarConferenciaReciclagem(cpf) já usada no Banco de
+     Colaboradores: mesma RPC (confirmar_conferencia_reciclagem_v1),
+     mesmo campo (reciclagem_conferida), mesmo registro central do
+     colaborador. Essa função já recarrega colaboradoresBanco sozinha;
+     só falta re-renderizar a tela ATUAL (aqui, a PF) depois — ela só
+     atualiza o DOM do Banco quando chamada de lá. renderShell()
+     reconstrói a Comunicação PF já com reciclagem_conferida=true. */
+  document.querySelectorAll('.btn-confirmar-reciclagem').forEach(btn=>{
+    btn.onclick=async ()=>{
+      await confirmarConferenciaReciclagem(btn.dataset.cpf);
+      renderShell();
     };
   });
   const btn=document.getElementById('btnGerarPF');
